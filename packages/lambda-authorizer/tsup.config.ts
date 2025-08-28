@@ -4,7 +4,7 @@ export default defineConfig({
   entry: ['src/index.ts'],
   clean: true,
   format: ['cjs'],
-  target: 'node20',
+  target: 'node22',
   platform: 'node',
   sourcemap: false,
   dts: true,

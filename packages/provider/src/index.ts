@@ -10,7 +10,6 @@ import * as fs from 'node:fs';
 export interface AuthorizerWithPolicyStoreArgs {
   description?: pulumi.Input<string>;
   validationMode?: pulumi.Input<'STRICT' | 'OFF'>;
-  runtime?: pulumi.Input<string>; // e.g., nodejs20.x
   lambdaEnvironment?: pulumi.Input<Record<string, pulumi.Input<string>>>;
   logRetentionDays?: pulumi.Input<number>;
 }
@@ -28,7 +27,8 @@ export class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   ) {
     super('verified-permissions-authorizer:index:AuthorizerWithPolicyStore', name, {}, opts);
 
-    const runtime = args.runtime ?? 'nodejs20.x';
+    // Enforce Node.js 22.x runtime; not configurable per VP-1.
+    const runtime = 'nodejs22.x';
     const validationMode = args.validationMode ?? 'STRICT';
     const description = args.description;
     const logRetentionDays = args.logRetentionDays ?? 14;

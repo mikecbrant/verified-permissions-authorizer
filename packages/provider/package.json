@@ -2,11 +2,10 @@
   "name": "pulumi-verified-permissions-authorizer",
   "version": "0.0.1",
   "private": false,
-  "description": "Pulumi TypeScript component provider for AWS Verified Permissions Policy Store and Lambda Authorizer",
+  "description": "Pulumi component package for AWS Verified Permissions Policy Store + Lambda Authorizer (runtime fixed to nodejs22.x)",
   "license": "MIT",
   "keywords": [
     "pulumi",
-    "pulumi-component",
     "aws",
     "verified-permissions",
     "lambda",

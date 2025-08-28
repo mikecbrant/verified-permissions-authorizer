@@ -1,0 +1,48 @@
+{
+  "name": "verified-permissions-lambda-authorizer",
+  "version": "0.0.1",
+  "private": false,
+  "description": "AWS Lambda Authorizer for AWS Verified Permissions (TypeScript, bundled)",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --ext .ts --max-warnings 0",
+    "format": "prettier --check .",
+    "format:write": "prettier --write ."
+  },
+  "dependencies": {
+    "@aws-sdk/client-verifiedpermissions": "^3.671.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.146",
+    "@types/node": "^20.14.12",
+    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "@typescript-eslint/parser": "^8.8.1",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-promise": "^7.1.0",
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
+    "tslib": "^2.8.1",
+    "tsup": "^8.2.4",
+    "typescript": "^5.6.3"
+  }
+}

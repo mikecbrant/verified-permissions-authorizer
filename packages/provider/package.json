@@ -1,0 +1,67 @@
+{
+  "name": "pulumi-verified-permissions-authorizer",
+  "version": "0.0.1",
+  "private": false,
+  "description": "Pulumi TypeScript component provider for AWS Verified Permissions Policy Store and Lambda Authorizer",
+  "license": "MIT",
+  "keywords": [
+    "pulumi",
+    "pulumi-component",
+    "aws",
+    "verified-permissions",
+    "lambda",
+    "authorizer"
+  ],
+  "homepage": "https://github.com/mikecbrant/verified-permissions-authorizer",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikecbrant/verified-permissions-authorizer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mikecbrant/verified-permissions-authorizer/issues"
+  },
+  "sideEffects": false,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "schema.json",
+    "Pulumi.yaml",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --ext .ts --max-warnings 0",
+    "format": "prettier --check .",
+    "format:write": "prettier --write ."
+  },
+  "dependencies": {
+    "@pulumi/aws": "^6.62.1",
+    "@pulumi/pulumi": "^3.136.0",
+    "verified-permissions-lambda-authorizer": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.12",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3"
+  },
+  "pulumi": {
+    "resource": true,
+    "schema": "./schema.json"
+  }
+}

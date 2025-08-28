@@ -1,61 +1,63 @@
 import type {
   APIGatewayAuthorizerWithContextResult,
   APIGatewayRequestAuthorizerEvent,
-  PolicyDocument,
+  AppSyncAuthorizerEvent,
+  AppSyncAuthorizerResult,
 } from 'aws-lambda';
-import {
-  VerifiedPermissionsClient,
-  GetPolicyStoreCommand,
-} from '@aws-sdk/client-verifiedpermissions';
+import { GetPolicyStoreCommand } from '@aws-sdk/client-verifiedpermissions';
+import { getVerifiedPermissionsClient } from './aws/vpClient.js';
+import { buildApiGatewayPolicy, buildAppSyncAuthResult } from './policy.js';
+import { getBearerToken, parseJwtPayload } from './utils/jwt.js';
+import { isApiGatewayRequestAuthorizerEvent, isAppSyncAuthorizerEvent } from './utils/events.js';
 
-type AuthorizerEvent = APIGatewayRequestAuthorizerEvent;
+type EmptyCtx = Record<string, never>;
 
 const { POLICY_STORE_ID: policyStoreIdFromEnv } = process.env as Record<string, string | undefined>;
 
-function buildPolicy(
-  effect: 'Allow' | 'Deny',
-  resourceArn: string,
-  principalId: string,
-): APIGatewayAuthorizerWithContextResult<Record<string, never>> {
-  const policyDocument: PolicyDocument = {
-    Version: '2012-10-17',
-    Statement: [
-      {
-        Action: 'execute-api:Invoke',
-        Effect: effect,
-        Resource: resourceArn,
-      },
-    ],
-  };
-  return {
-    principalId,
-    policyDocument,
-    context: {},
-  };
-}
+type AuthorizerEvent = APIGatewayRequestAuthorizerEvent | AppSyncAuthorizerEvent;
+type AuthorizerResult =
+  | APIGatewayAuthorizerWithContextResult<EmptyCtx>
+  | AppSyncAuthorizerResult;
 
-export async function handler(
-  event: AuthorizerEvent,
-): Promise<APIGatewayAuthorizerWithContextResult<Record<string, never>>> {
-  const token = event.headers?.authorization ?? event.headers?.Authorization;
-  const methodArn = event.methodArn;
-  const principalId = token ?? 'anonymous';
+const denyFor = (event: AuthorizerEvent): AuthorizerResult => {
+  if (isApiGatewayRequestAuthorizerEvent(event)) {
+    return buildApiGatewayPolicy('Deny', event.methodArn, 'anonymous');
+  }
+  if (isAppSyncAuthorizerEvent(event)) {
+    return buildAppSyncAuthResult(false);
+  }
+  // Default safe deny
+  return buildAppSyncAuthResult(false);
+};
 
+const handler = async (event: AuthorizerEvent): Promise<AuthorizerResult> => {
+  const token = getBearerToken(event);
+  if (!token) return denyFor(event);
+
+  // Minimal local JWT validation (structure/exp/nbf)
+  const payload = parseJwtPayload(token);
+  if (!payload) return denyFor(event);
+
+  // Ensure a policy store is configured
   const storeId = policyStoreIdFromEnv;
-  if (!storeId) {
-    // Fail closed: deny when not configured
-    return buildPolicy('Deny', methodArn, principalId);
-  }
+  if (!storeId) return denyFor(event);
 
-  // Lightweight interaction with the Policy Store to verify it exists and is accessible.
-  const vp = new VerifiedPermissionsClient({});
-  try {
-    await vp.send(new GetPolicyStoreCommand({ policyStoreId: storeId }));
-    // For initial scaffold we allow when the store is reachable. Replace with IsAuthorized checks later.
-    return buildPolicy('Allow', methodArn, principalId);
-  } catch {
-    return buildPolicy('Deny', methodArn, principalId);
-  }
-}
+  const client = getVerifiedPermissionsClient();
+  const cmd = new GetPolicyStoreCommand({ policyStoreId: storeId });
 
-export type { AuthorizerEvent };
+  return client
+    .send(cmd)
+    .then(() => {
+      if (isApiGatewayRequestAuthorizerEvent(event)) {
+        const principalId = typeof payload.sub === 'string' ? payload.sub : 'subject';
+        return buildApiGatewayPolicy('Allow', event.methodArn, principalId);
+      }
+      if (isAppSyncAuthorizerEvent(event)) {
+        return buildAppSyncAuthResult(true);
+      }
+      return buildAppSyncAuthResult(false);
+    })
+    .catch(() => denyFor(event));
+};
+
+export { handler };

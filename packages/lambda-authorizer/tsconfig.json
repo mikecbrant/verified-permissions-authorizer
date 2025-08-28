@@ -1,9 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    "target": "ES2023",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
@@ -17,7 +17,7 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "exactOptionalPropertyTypes": true,
-    "lib": ["ES2022"],
+    "lib": ["ES2023"],
     "types": ["node", "aws-lambda"]
   },
   "include": ["src"]

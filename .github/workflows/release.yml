@@ -1,4 +1,4 @@
-name: Release (Changesets)
+name: Release
 
 on:
   push:
@@ -125,7 +125,7 @@ jobs:
       - name: Copy built lambda into provider assets
         run: |
           mkdir -p provider/assets
-          cp packages/lambda-authorizer/dist/index.js provider/assets/index.js
+          cp packages/lambda-authorizer/dist/index.mjs provider/assets/index.mjs
 
       - name: Setup Go
         uses: actions/setup-go@v5

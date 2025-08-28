@@ -3,7 +3,7 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: ['src/index.ts'],
   clean: true,
-  format: ['cjs'],
+  format: ['esm'],
   target: 'node22',
   platform: 'node',
   sourcemap: false,
@@ -12,4 +12,5 @@ export default defineConfig({
   bundle: true,
   outDir: 'dist',
   shims: false,
+  outExtension: () => ({ js: '.mjs' }),
 });

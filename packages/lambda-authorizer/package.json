@@ -4,8 +4,8 @@
   "private": false,
   "description": "AWS Lambda Authorizer for AWS Verified Permissions (TypeScript, bundled)",
   "license": "MIT",
-  "type": "commonjs",
-  "main": "dist/index.js",
+  "type": "module",
+  "main": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "files": [
     "dist"
@@ -13,7 +13,7 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "default": "./dist/index.mjs"
     }
   },
   "engines": {
@@ -21,9 +21,9 @@
   },
   "scripts": {
     "build": "tsup",
-    "clean": "rimraf dist",
+    "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src --ext .ts --max-warnings 0",
+    "lint": "eslint src --max-warnings 0",
     "format": "prettier --check .",
     "format:write": "prettier --write ."
   },
@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.146",
-    "@types/node": "^20.14.12",
+    "@types/node": "^22.0.0",
     "@typescript-eslint/eslint-plugin": "^8.8.1",
     "@typescript-eslint/parser": "^8.8.1",
     "eslint": "^8.57.0",
@@ -40,7 +40,6 @@
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-promise": "^7.1.0",
     "prettier": "^3.3.3",
-    "rimraf": "^6.0.1",
     "tslib": "^2.8.1",
     "tsup": "^8.2.4",
     "typescript": "^5.6.3"

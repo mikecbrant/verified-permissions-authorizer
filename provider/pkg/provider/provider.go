@@ -13,8 +13,8 @@ import (
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-//go:embed ../../assets/index.js
-var authorizerIndexJS string
+//go:embed ../../assets/index.mjs
+var authorizerIndexMJS string
 
 // NewProvider wires up the multi-language component provider surface.
 func NewProvider() (p.Provider, error) {
@@ -132,7 +132,7 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
 
     // 3) Lambda code: embed built authorizer
     code := pulumi.NewAssetArchive(map[string]pulumi.AssetOrArchive{
-        "index.js": pulumi.NewStringAsset(authorizerIndexJS),
+        "index.mjs": pulumi.NewStringAsset(authorizerIndexMJS),
     })
 
     fn, err := awslambda.NewFunction(ctx, fmt.Sprintf("%s-authorizer", name), &awslambda.FunctionArgs{

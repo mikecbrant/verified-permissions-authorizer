@@ -7,4 +7,5 @@ export default defineConfig({
   clean: true,
   format: ['esm'],
   target: 'es2022',
+  outExtension: () => ({ js: '.mjs' }),
 });

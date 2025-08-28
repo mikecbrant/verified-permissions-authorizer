@@ -1,14 +1,14 @@
 import * as pulumi from '@pulumi/pulumi';
 
-export type ValidationMode = 'STRICT' | 'OFF';
+type ValidationMode = 'STRICT' | 'OFF';
 
-export interface AuthorizerWithPolicyStoreArgs {
+type AuthorizerWithPolicyStoreArgs = {
   description?: pulumi.Input<string>;
   validationMode?: pulumi.Input<ValidationMode>;
   lambdaEnvironment?: pulumi.Input<Record<string, pulumi.Input<string>>>;
 }
 
-export class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
+class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   public readonly policyStoreId!: pulumi.Output<string>;
   public readonly policyStoreArn!: pulumi.Output<string>;
   public readonly functionArn!: pulumi.Output<string>;
@@ -25,4 +25,4 @@ export class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   }
 }
 
-export default AuthorizerWithPolicyStore;
+export { AuthorizerWithPolicyStore, type AuthorizerWithPolicyStoreArgs, type ValidationMode };

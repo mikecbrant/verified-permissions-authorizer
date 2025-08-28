@@ -58,33 +58,27 @@ importers:
         specifier: ^5.6.3
         version: 5.9.2
 
-  packages/provider:
+  sdk/nodejs:
     dependencies:
-      '@pulumi/aws':
-        specifier: ^6.62.1
-        version: 6.83.0(typescript@5.9.2)
       '@pulumi/pulumi':
-        specifier: ^3.136.0
+        specifier: ^3.0.0
         version: 3.191.0(typescript@5.9.2)
       verified-permissions-lambda-authorizer:
         specifier: workspace:*
-        version: link:../lambda-authorizer
+        version: link:../../packages/lambda-authorizer
     devDependencies:
       '@types/node':
         specifier: ^20.14.12
         version: 20.19.11
-      eslint:
-        specifier: ^8.57.0
-        version: 8.57.0
-      eslint-config-prettier:
-        specifier: ^9.1.0
-        version: 9.1.2(eslint@8.57.0)
       prettier:
         specifier: ^3.3.3
         version: 3.6.2
       rimraf:
         specifier: ^6.0.1
         version: 6.0.1
+      tsup:
+        specifier: ^8.2.4
+        version: 8.5.0(typescript@5.9.2)
       typescript:
         specifier: ^5.6.3
         version: 5.9.2
@@ -684,9 +678,6 @@ packages:
 
   '@protobufjs/utf8@1.1.0':
     resolution: {integrity: sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==}
-
-  '@pulumi/aws@6.83.0':
-    resolution: {integrity: sha512-uYpYSA5aaDERFuxy3D+FDWiwH7YYNHSwGLpHVuARAzBfQ/SQDkS/tfJI5NNo7/+KCmje3rloKE2enUK/Q9bVBg==}
 
   '@pulumi/pulumi@3.191.0':
     resolution: {integrity: sha512-l2zFS+wGKeyFaAcSn+AhIi2Hkq7hXS/+biacKO5L38LFPGXMDrrmzhLsQ+uLXng9f6ZwXvfSbQC9m0YM5s8wwg==}
@@ -2124,11 +2115,6 @@ packages:
   micromatch@4.0.8:
     resolution: {integrity: sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA==}
     engines: {node: '>=8.6'}
-
-  mime@2.6.0:
-    resolution: {integrity: sha512-USPkMeET31rOMiarsBNIHZKLGgvKc/LrjofAnBlOttf5ajRvqiRA8QsenbcooctK6d6Ts6aqZXBA+XbkKthiQg==}
-    engines: {node: '>=4.0.0'}
-    hasBin: true
 
   mimic-fn@2.1.0:
     resolution: {integrity: sha512-OqbOk5oEQeAZ8WXWydlu9HJjz9WVdEIvamMCcXmuqUYjTknH/sqsWvhQ3vgwKFRR1HpjvNBKQ37nbJgYzGqGcg==}
@@ -3958,16 +3944,6 @@ snapshots:
 
   '@protobufjs/utf8@1.1.0': {}
 
-  '@pulumi/aws@6.83.0(typescript@5.9.2)':
-    dependencies:
-      '@pulumi/pulumi': 3.191.0(typescript@5.9.2)
-      mime: 2.6.0
-    transitivePeerDependencies:
-      - bluebird
-      - supports-color
-      - ts-node
-      - typescript
-
   '@pulumi/pulumi@3.191.0(typescript@5.9.2)':
     dependencies:
       '@grpc/grpc-js': 1.13.4
@@ -5673,8 +5649,6 @@ snapshots:
     dependencies:
       braces: 3.0.3
       picomatch: 2.3.1
-
-  mime@2.6.0: {}
 
   mimic-fn@2.1.0: {}
 

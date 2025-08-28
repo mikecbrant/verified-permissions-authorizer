@@ -1,0 +1,38 @@
+{
+  "name": "pulumi-verified-permissions-authorizer",
+  "version": "0.0.1",
+  "description": "Pulumi Node.js SDK for the verified-permissions-authorizer component provider (Go).",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo 'no-op'",
+    "format": "prettier --check .",
+    "format:write": "prettier --write ."
+  },
+  "dependencies": {
+    "@pulumi/pulumi": "^3.0.0",
+    "verified-permissions-lambda-authorizer": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.12",
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
+    "tsup": "^8.2.4",
+    "typescript": "^5.6.3"
+  }
+}

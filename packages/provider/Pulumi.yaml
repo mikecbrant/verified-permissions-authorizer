@@ -1,3 +1,0 @@
-name: verified-permissions-authorizer
-runtime: nodejs
-description: Pulumi component provider that provisions AWS Verified Permissions Policy Store and a Lambda Authorizer.

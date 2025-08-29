@@ -12,9 +12,11 @@
     "clean": "pnpm -r clean",
     "changeset": "changeset",
     "release": "changeset version && pnpm -r build",
-    "test": "pnpm -r test && bash -lc 'if command -v go >/dev/null 2>&1; then cd provider && go test ./... -coverprofile=coverage.out -covermode=count; else echo \"[skip] go not installed; skipping provider tests locally\"; fi'"
+    "build:schema": "node ./scripts/build-schema.mjs",
+    "test": "pnpm -r test && bash -lc 'if command -v go >/dev/null 2>&1; then cd packages/provider && go test ./... -coverprofile=coverage.out -covermode=count; else echo \"[skip] go not installed; skipping provider tests locally\"; fi'"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.27.8"
+    "@changesets/cli": "^2.27.8",
+    "yaml": "^2.5.1"
   }
 }

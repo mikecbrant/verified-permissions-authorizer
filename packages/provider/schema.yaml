@@ -1,0 +1,33 @@
+$schema: https://raw.githubusercontent.com/pulumi/pulumi/master/pkg/codegen/schema/pulumi.json
+name: verified-permissions-authorizer
+version: 0.0.1
+description: >-
+  Bridged Go component provider that provisions an AWS Verified Permissions Policy Store
+  and a Lambda Authorizer (runtime fixed to nodejs22.x).
+keywords: [pulumi, aws, verified-permissions, lambda, authorizer]
+repository: https://github.com/mikecbrant/verified-permissions-authorizer
+license: MIT
+types: {}
+resources:
+  verified-permissions-authorizer:index:AuthorizerWithPolicyStore:
+    isComponent: true
+    inputProperties:
+      description:
+        type: string
+        description: Policy store description
+        plain: true
+      validationMode:
+        type: string
+        enum: [STRICT, OFF]
+        plain: true
+      lambdaEnvironment:
+        type: object
+        additionalProperties:
+          type: string
+        description: Additional environment variables for the Lambda authorizer
+    requiredInputs: []
+    properties:
+      policyStoreId: { type: string }
+      policyStoreArn: { type: string }
+      functionArn: { type: string }
+      roleArn: { type: string }

@@ -20,10 +20,11 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --emitDeclarationOnly && tsgo -p tsconfig.json && mv dist/index.js dist/index.mjs",
-    "clean": "rm -rf dist",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src --max-warnings 0",
+    "_gen:tsconfig": "node ./scripts/tsconfig-json-from-mjs.mjs",
+    "build": "pnpm _gen:tsconfig && tsc -p tsconfig.generated.json --emitDeclarationOnly && tsgo -p tsconfig.generated.json && mv dist/index.js dist/index.mjs",
+    "clean": "rm -rf dist tsconfig.generated.json",
+    "typecheck": "pnpm _gen:tsconfig && tsc -p tsconfig.generated.json --noEmit",
+    "lint": "pnpm _gen:tsconfig && eslint src --max-warnings 0",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "format": "prettier --check .",

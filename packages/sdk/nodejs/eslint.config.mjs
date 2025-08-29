@@ -1,8 +1,9 @@
-import tsParser from '@typescript-eslint/parser';
-import tsEslintPlugin from '@typescript-eslint/eslint-plugin';
-import importPlugin from 'eslint-plugin-import';
-import simpleImportSort from 'eslint-plugin-simple-import-sort';
-import promisePlugin from 'eslint-plugin-promise';
+import tsParser from '@typescript-eslint/parser'
+import tsEslintPlugin from '@typescript-eslint/eslint-plugin'
+import importPlugin from 'eslint-plugin-import'
+import simpleImportSort from 'eslint-plugin-simple-import-sort'
+import promisePlugin from 'eslint-plugin-promise'
+import fs from 'node:fs'
 
 /** @type {import('eslint').Linter.FlatConfig[]} */
 const config = [
@@ -12,7 +13,7 @@ const config = [
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        project: ['./tsconfig.json'],
+        project: fs.existsSync(new URL('./tsconfig.generated.json', import.meta.url)) ? ['./tsconfig.generated.json'] : [],
         tsconfigRootDir: new URL('.', import.meta.url).pathname,
         sourceType: 'module',
       },
@@ -33,6 +34,6 @@ const config = [
     },
   },
   { files: ['*.js', '*.cjs', '*.mjs'], languageOptions: { parserOptions: { project: null } } },
-];
+]
 
-export default config;
+export default config

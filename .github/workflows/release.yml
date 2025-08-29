@@ -39,8 +39,21 @@ jobs:
 
       - name: Typecheck + Lint
         run: |
-          pnpm -r typecheck || true
-          pnpm -r lint || true
+          pnpm -r typecheck
+          pnpm -r lint
+
+      - name: Unit tests (Node packages) with 100% coverage
+        run: pnpm -r test
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'packages/provider/go.mod'
+
+      - name: Unit tests (Go provider) with coverage
+        run: |
+          cd packages/provider
+          go test ./... -coverprofile=coverage.out -covermode=count
 
       - name: Build workspace (ts)
         run: pnpm -r --parallel build
@@ -124,24 +137,24 @@ jobs:
 
       - name: Copy built lambda into provider assets
         run: |
-          mkdir -p provider/assets
-          cp packages/lambda-authorizer/dist/index.mjs provider/assets/index.mjs
+          mkdir -p packages/provider/assets
+          cp packages/lambda-authorizer/dist/index.mjs packages/provider/assets/index.mjs
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22.x'
+          go-version-file: 'packages/provider/go.mod'
 
       - name: Build provider plugin
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          cd provider/cmd/pulumi-resource-verified-permissions-authorizer
+          cd packages/provider/cmd/pulumi-resource-verified-permissions-authorizer
           go build -ldflags "-s -w" -o pulumi-resource-verified-permissions-authorizer
           cd -
           # Package
-          BIN=provider/cmd/pulumi-resource-verified-permissions-authorizer/pulumi-resource-verified-permissions-authorizer
+          BIN=packages/provider/cmd/pulumi-resource-verified-permissions-authorizer/pulumi-resource-verified-permissions-authorizer
           if [ "${{ matrix.goos }}" = "windows" ]; then
             mv "$BIN" "${BIN}.exe"
             BIN="${BIN}.exe"
@@ -166,8 +179,9 @@ jobs:
       - name: Publish package to Pulumi Registry (once)
         if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
         run: |
+          pnpm build:schema
           # Ensure provider/schema.json version matches the SDK version just published
           ver=${{ needs.version_or_publish.outputs.provider_version }}
           tmp=$(mktemp)
-          jq ".version = \"$ver\"" provider/schema.json > "$tmp" && mv "$tmp" provider/schema.json
-          npx pulumi@latest package publish provider/schema.json --readme provider/README.md
+          jq ".version = \"$ver\"" packages/provider/schema.json > "$tmp" && mv "$tmp" packages/provider/schema.json
+          npx pulumi@latest package publish packages/provider/schema.json --readme packages/provider/README.md

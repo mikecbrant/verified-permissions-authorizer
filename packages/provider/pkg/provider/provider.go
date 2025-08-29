@@ -30,8 +30,8 @@ type AuthorizerArgs struct {
     // Policy store description
     Description *string `pulumi:"description,optional"`
     // Validation mode for the policy store: STRICT | OFF (default STRICT)
-    ValidationMode *string            `pulumi:"validationMode,optional"`
-    LambdaEnv      map[string]string  `pulumi:"lambdaEnvironment,optional"`
+    ValidationMode *string           `pulumi:"validationMode,optional"`
+    LambdaEnv      map[string]string `pulumi:"lambdaEnvironment,optional"`
 }
 
 // AuthorizerResult defines the outputs for the component resource.
@@ -167,21 +167,8 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
         return res, err
     }
 
-    res = AuthorizerResult{
-        PolicyStoreId:  store.ID().ToStringOutput().ToStringPtrOutput().Elem().ApplyT(func(s *string) string { if s==nil { return "" }; return *s }).(pulumi.StringOutput).ToStringOutput().Elem().(string),
-        PolicyStoreArn: store.Arn.ApplyT(func(a string) string { return a }).(pulumi.StringOutput).ToStringOutput().Elem().(string),
-        FunctionArn:    fn.Arn.ApplyT(func(a string) string { return a }).(pulumi.StringOutput).ToStringOutput().Elem().(string),
-        RoleArn:        role.Arn.ApplyT(func(a string) string { return a }).(pulumi.StringOutput).ToStringOutput().Elem().(string),
-    }
-
-    // Above conversion attempts to coerce outputs to strings for the provider result; however, infer will marshal outputs automatically
-    // if we instead return as Output types wrapped in a struct with pulumi tags. We'll therefore override with Outputs below.
-    return AuthorizerResult{
-        PolicyStoreId:  "", // Populated via RegisterOutputs by infer
-        PolicyStoreArn: "",
-        FunctionArn:    "",
-        RoleArn:        "",
-    }, infer.SetOutputs(map[string]any{
+    // Return outputs via infer.SetOutputs
+    return AuthorizerResult{}, infer.SetOutputs(map[string]any{
         "policyStoreId":  store.ID(),
         "policyStoreArn": store.Arn,
         "functionArn":    fn.Arn,

@@ -3,7 +3,13 @@
   "name": "verified-permissions-authorizer",
   "version": "0.0.1",
   "description": "Bridged Go component provider that provisions an AWS Verified Permissions Policy Store and a Lambda Authorizer (runtime fixed to nodejs22.x).",
-  "keywords": ["pulumi", "aws", "verified-permissions", "lambda", "authorizer"],
+  "keywords": [
+    "pulumi",
+    "aws",
+    "verified-permissions",
+    "lambda",
+    "authorizer"
+  ],
   "repository": "https://github.com/mikecbrant/verified-permissions-authorizer",
   "license": "MIT",
   "types": {},
@@ -16,19 +22,36 @@
           "description": "Policy store description",
           "plain": true
         },
-        "validationMode": { "type": "string", "enum": ["STRICT", "OFF"], "plain": true },
+        "validationMode": {
+          "type": "string",
+          "enum": [
+            "STRICT",
+            "OFF"
+          ],
+          "plain": true
+        },
         "lambdaEnvironment": {
           "type": "object",
-          "additionalProperties": { "type": "string" },
+          "additionalProperties": {
+            "type": "string"
+          },
           "description": "Additional environment variables for the Lambda authorizer"
         }
       },
       "requiredInputs": [],
       "properties": {
-        "policyStoreId": { "type": "string" },
-        "policyStoreArn": { "type": "string" },
-        "functionArn": { "type": "string" },
-        "roleArn": { "type": "string" }
+        "policyStoreId": {
+          "type": "string"
+        },
+        "policyStoreArn": {
+          "type": "string"
+        },
+        "functionArn": {
+          "type": "string"
+        },
+        "roleArn": {
+          "type": "string"
+        }
       }
     }
   }

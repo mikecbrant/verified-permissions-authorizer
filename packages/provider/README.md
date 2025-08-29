@@ -19,12 +19,16 @@ IAM permissions
 - The Lambda execution role is granted `verifiedpermissions:GetPolicyStore` and `verifiedpermissions:IsAuthorized`.
 
 Tight coupling to the Lambda package
-- The provider embeds the compiled authorizer (`packages/lambda-authorizer/dist/index.js`) at build time via `go:embed`.
+- The provider embeds the compiled authorizer (`packages/lambda-authorizer/dist/index.mjs`) at build time via `go:embed`.
 - CI ensures that any change to the Lambda package triggers a provider release by bumping the Node SDK package and rebuilding the provider plugin with the new embedded artifact.
 
+Schema authoring
+- Author the provider schema in YAML at `packages/provider/schema.yaml`.
+- The JSON artifact `packages/provider/schema.json` is generated from the YAML for codegen/publishing.
+
 Publishing
-- The provider schema (`provider/schema.json`) is published to the Pulumi Registry.
+- The provider schema (`packages/provider/schema.json`) is published to the Pulumi Registry.
 - Provider plugin binaries (`pulumi-resource-verified-permissions-authorizer`) are built for common platforms and uploaded to the corresponding GitHub Release tag.
-- The Node SDK is published from `sdk/nodejs` to npm as `pulumi-verified-permissions-authorizer`.
+- The Node SDK is published from `packages/sdk/nodejs` to npm as `pulumi-verified-permissions-authorizer`.
 
 See the root README for release automation details.

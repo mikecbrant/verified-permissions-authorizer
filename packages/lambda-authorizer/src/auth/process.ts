@@ -36,7 +36,11 @@ const processAuthorization = async (
   const token = getBearerToken(event)
   if (!token) return false
   const key = process.env.JWT_SECRET
-  if (!key) return false
+  if (!key) {
+    // Fail closed with an explicit signal when configuration is missing
+    console.error('[authorizer] JWT_SECRET is not configured; denying request')
+    return false
+  }
   const payload = authenticate(token, key)
   const subject = typeof payload.sub === 'string' ? payload.sub : 'subject'
   const input = buildInput(policyStoreId, event, subject)

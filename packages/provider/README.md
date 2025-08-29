@@ -13,7 +13,7 @@ Interface (stable)
 Lambda contract (fixed)
 - Runtime: `nodejs22.x` (not configurable)
 - Handler: `index.handler`
-- Environment: includes `POLICY_STORE_ID`
+- Environment: includes `POLICY_STORE_ID` and `JWT_SECRET` (used to verify incoming JWTs; default algorithms allowlist is `HS256`).
 
 IAM permissions
 - The Lambda execution role is granted `verifiedpermissions:GetPolicyStore` and `verifiedpermissions:IsAuthorized`.

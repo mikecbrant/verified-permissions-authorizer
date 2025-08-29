@@ -3,21 +3,41 @@ import type {
   APIGatewayRequestAuthorizerEvent,
   AppSyncAuthorizerEvent,
   AppSyncAuthorizerResult,
+  PolicyDocument,
 } from 'aws-lambda'
 
-import { type AuthorizerEvent,processAuthorization } from './auth/process.js'
-import { isApiGatewayRequestAuthorizerEvent, isAppSyncAuthorizerEvent } from './utils/events.js'
-import { apiGatewayPolicy, appSyncAuthResult } from './utils/responses.js'
+import { type AuthorizerEvent, processAuthorization } from './auth/process.js'
+import { isApiGatewayAuthorizerEvent, isAppSyncAuthorizerEvent } from './utils/events.js'
 
 type EmptyCtx = Record<string, never>
 
+const apiGatewayPolicy = (
+  effect: 'Allow' | 'Deny',
+  resourceArn: string,
+  principalId: string,
+): APIGatewayAuthorizerWithContextResult<EmptyCtx> => {
+  const policyDocument: PolicyDocument = {
+    Version: '2012-10-17',
+    Statement: [
+      {
+        Action: 'execute-api:Invoke',
+        Effect: effect,
+        Resource: resourceArn,
+      },
+    ],
+  }
+  return { principalId, policyDocument, context: {} }
+}
 
+const appSyncAuthResult = (isAuthorized: boolean): AppSyncAuthorizerResult => ({
+  isAuthorized,
+})
 type AuthorizerResult =
   | APIGatewayAuthorizerWithContextResult<EmptyCtx>
   | AppSyncAuthorizerResult
 
 const denyFor = (event: AuthorizerEvent): AuthorizerResult => {
-  if (isApiGatewayRequestAuthorizerEvent(event)) {
+  if (isApiGatewayAuthorizerEvent(event)) {
     return apiGatewayPolicy('Deny', event.methodArn, 'anonymous')
   }
   if (isAppSyncAuthorizerEvent(event)) {
@@ -32,7 +52,7 @@ const handler = async (event: AuthorizerEvent): Promise<AuthorizerResult> => {
 
   return processAuthorization(storeId, event)
     .then((ok) => {
-      if (isApiGatewayRequestAuthorizerEvent(event)) {
+      if (isApiGatewayAuthorizerEvent(event)) {
         // We do not have principalId here; API GW requires a principal. Use anonymous when denied.
         const principal = ok ? 'subject' : 'anonymous'
         return apiGatewayPolicy(ok ? 'Allow' : 'Deny', event.methodArn, principal)

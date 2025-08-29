@@ -8,7 +8,7 @@ type AnyAuthorizerEvent = APIGatewayRequestAuthorizerEvent | AppSyncAuthorizerEv
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null
 
-const isApiGatewayRequestAuthorizerEvent = (
+const isApiGatewayAuthorizerEvent = (
   event: unknown,
 ): event is APIGatewayRequestAuthorizerEvent => {
   if (!isRecord(event)) return false
@@ -34,4 +34,4 @@ const isAppSyncAuthorizerEvent = (event: unknown): event is AppSyncAuthorizerEve
 }
 
 export type { AnyAuthorizerEvent }
-export { isApiGatewayRequestAuthorizerEvent, isAppSyncAuthorizerEvent }
+export { isApiGatewayAuthorizerEvent, isAppSyncAuthorizerEvent }

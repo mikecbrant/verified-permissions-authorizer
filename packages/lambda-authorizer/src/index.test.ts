@@ -1,11 +1,11 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach,describe, expect, it, vi } from 'vitest'
+
+import { processAuthorization } from './auth/process.js'
+import { handler } from './index.js'
 
 vi.mock('./auth/process.js', () => ({
   processAuthorization: vi.fn(),
 }))
-
-import { handler } from './index.js'
-import { processAuthorization } from './auth/process.js'
 
 const apiEvent = {
   type: 'REQUEST',

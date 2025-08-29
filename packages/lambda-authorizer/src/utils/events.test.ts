@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  isApiGatewayRequestAuthorizerEvent,
-  isAppSyncAuthorizerEvent,
-} from './events.js'
+
+import { isApiGatewayAuthorizerEvent, isAppSyncAuthorizerEvent } from './events.js'
 
 describe('event type guards', () => {
   it('detects API Gateway Request Authorizer events', () => {
@@ -11,7 +9,7 @@ describe('event type guards', () => {
       methodArn: 'arn:aws:execute-api:us-east-1:123:abc/GET/foo',
       headers: { authorization: 'Bearer x' },
     }
-    expect(isApiGatewayRequestAuthorizerEvent(ev)).toBe(true)
+    expect(isApiGatewayAuthorizerEvent(ev)).toBe(true)
     expect(isAppSyncAuthorizerEvent(ev)).toBe(false)
   })
 
@@ -21,11 +19,11 @@ describe('event type guards', () => {
       requestContext: { apiId: 'abc123' },
     }
     expect(isAppSyncAuthorizerEvent(ev)).toBe(true)
-    expect(isApiGatewayRequestAuthorizerEvent(ev)).toBe(false)
+    expect(isApiGatewayAuthorizerEvent(ev)).toBe(false)
   })
 
   it('returns false for non-object inputs', () => {
-    expect(isApiGatewayRequestAuthorizerEvent(null as any)).toBe(false)
+    expect(isApiGatewayAuthorizerEvent(null as any)).toBe(false)
     expect(isAppSyncAuthorizerEvent(42 as any)).toBe(false)
   })
 })

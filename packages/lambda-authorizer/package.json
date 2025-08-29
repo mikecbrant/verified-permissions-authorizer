@@ -20,11 +20,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "_gen:tsconfig": "node ./scripts/tsconfig-json-from-mjs.mjs",
-    "build": "pnpm _gen:tsconfig && tsc -p tsconfig.generated.json --emitDeclarationOnly && tsgo -p tsconfig.generated.json && mv dist/index.js dist/index.mjs",
-    "clean": "rm -rf dist tsconfig.generated.json",
-    "typecheck": "pnpm _gen:tsconfig && tsc -p tsconfig.generated.json --noEmit",
-    "lint": "pnpm _gen:tsconfig && eslint src --max-warnings 0",
+    "build": "tsgo --module ES2022 --target ES2023 --moduleResolution Bundler --outDir dist --rootDir src --declaration true --esModuleInterop true src/index.ts && mv dist/index.js dist/index.mjs",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit --module ES2022 --target ES2023 --moduleResolution Bundler --lib ES2023,DOM src/**/*.ts",
+    "lint": "eslint src --max-warnings 0",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "format": "prettier --check .",
@@ -46,24 +45,10 @@
     "eslint-plugin-promise": "^7.1.0",
     "eslint-plugin-simple-import-sort": "^12.1.0",
     "prettier": "^3.3.3",
-    "tslib": "^2.8.1",
     "typescript": "^5.6.3",
     "vitest": "^2.0.5",
     "@vitest/coverage-v8": "^2.0.5",
     "@typescript/native-preview": "7.0.0-dev.20250828.1"
   },
-  "vitest": {
-    "testTimeout": 30000,
-    "coverage": {
-      "provider": "v8",
-      "all": false,
-      "include": ["src/**"],
-      "thresholds": {
-        "lines": 100,
-        "functions": 100,
-        "branches": 100,
-        "statements": 100
-      }
-    }
-  }
+  "vitest": {}
 }

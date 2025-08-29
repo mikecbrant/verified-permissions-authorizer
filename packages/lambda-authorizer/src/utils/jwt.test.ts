@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
 import jwt from 'jsonwebtoken'
+import { describe, expect, it } from 'vitest'
+
 import { getBearerToken, parseJwtPayload } from './jwt.js'
 
 describe('jwt utils', () => {
@@ -27,17 +28,19 @@ describe('jwt utils', () => {
     expect(getBearerToken(apiEv as any)).toBe('z')
   })
 
-  it('parses payload and enforces exp/nbf', async () => {
-    const good = jwt.sign({ sub: 'u', exp: Math.floor(Date.now() / 1000) + 60 }, 's')
-    const bad = jwt.sign({ sub: 'u', exp: Math.floor(Date.now() / 1000) - 1 }, 's')
-    expect(parseJwtPayload(good)?.sub).toBe('u')
-    expect(parseJwtPayload(bad)).toBeUndefined()
+  it('verifies payload and enforces exp/nbf', async () => {
+    const secret = 's'
+    const good = jwt.sign({ sub: 'u', exp: Math.floor(Date.now() / 1000) + 60 }, secret)
+    const bad = jwt.sign({ sub: 'u', exp: Math.floor(Date.now() / 1000) - 1 }, secret)
+    expect(parseJwtPayload(good, secret)?.sub).toBe('u')
+    expect(parseJwtPayload(bad, secret)).toBeUndefined()
   })
 
   it('rejects tokens when nbf is in the future', () => {
     const now = Math.floor(Date.now() / 1000)
-    const t = jwt.sign({ sub: 'u', nbf: now + 60, exp: now + 120 }, 's')
-    expect(parseJwtPayload(t)).toBeUndefined()
+    const secret = 's'
+    const t = jwt.sign({ sub: 'u', nbf: now + 60, exp: now + 120 }, secret)
+    expect(parseJwtPayload(t, secret)).toBeUndefined()
   })
 
   it('returns undefined for unknown event shapes', () => {
@@ -54,7 +57,18 @@ describe('jwt utils', () => {
     expect(getBearerToken(ev as any)).toBeUndefined()
   })
 
+  it('returns undefined when AppSync auth token is empty string', () => {
+    const ev = { authorizationToken: '   ', requestContext: { apiId: 'id' } }
+    expect(getBearerToken(ev as any)).toBeUndefined()
+  })
+
   it('returns undefined for completely invalid JWT strings', () => {
-    expect(parseJwtPayload('not-a-jwt')).toBeUndefined()
+    expect(parseJwtPayload('not-a-jwt', 's')).toBeUndefined()
+  })
+
+  it('returns undefined when verified payload is a string', () => {
+    const secret = 's'
+    const t = jwt.sign('just-a-string', secret)
+    expect(parseJwtPayload(t, secret)).toBeUndefined()
   })
 })

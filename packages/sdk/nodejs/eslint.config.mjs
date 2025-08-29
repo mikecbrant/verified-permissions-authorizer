@@ -3,7 +3,7 @@ import tsEslintPlugin from '@typescript-eslint/eslint-plugin'
 import importPlugin from 'eslint-plugin-import'
 import simpleImportSort from 'eslint-plugin-simple-import-sort'
 import promisePlugin from 'eslint-plugin-promise'
-import fs from 'node:fs'
+// no extra imports
 
 /** @type {import('eslint').Linter.FlatConfig[]} */
 const config = [
@@ -13,7 +13,7 @@ const config = [
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        project: fs.existsSync(new URL('./tsconfig.generated.json', import.meta.url)) ? ['./tsconfig.generated.json'] : [],
+        project: null,
         tsconfigRootDir: new URL('.', import.meta.url).pathname,
         sourceType: 'module',
       },
@@ -27,13 +27,13 @@ const config = [
       'simple-import-sort/exports': 'error',
       '@typescript-eslint/explicit-function-return-type': 'error',
       '@typescript-eslint/explicit-module-boundary-types': 'error',
-      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-floating-promises': 'off',
       '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
       'promise/prefer-await-to-then': 'off',
     },
   },
-  { files: ['*.js', '*.cjs', '*.mjs'], languageOptions: { parserOptions: { project: null } } },
+  { files: ['*.js', '*.mjs'], languageOptions: { parserOptions: { project: null } } },
 ]
 
 export default config

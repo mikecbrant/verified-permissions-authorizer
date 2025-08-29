@@ -3,7 +3,6 @@ import tsEslintPlugin from '@typescript-eslint/eslint-plugin';
 import importPlugin from 'eslint-plugin-import';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import promisePlugin from 'eslint-plugin-promise';
-import fs from 'node:fs';
 
 /** @type {import('eslint').Linter.FlatConfig[]} */
 const config = [
@@ -15,7 +14,8 @@ const config = [
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        project: fs.existsSync(new URL('./tsconfig.generated.json', import.meta.url)) ? ['./tsconfig.generated.json'] : [],
+        // Do not depend on a generated tsconfig; rely on defaults without a project file.
+        project: null,
         tsconfigRootDir: new URL('.', import.meta.url).pathname,
         sourceType: 'module',
       },
@@ -37,7 +37,8 @@ const config = [
       // TypeScript best practices (subset applicable via parser)
       '@typescript-eslint/explicit-function-return-type': 'error',
       '@typescript-eslint/explicit-module-boundary-types': 'error',
-      '@typescript-eslint/no-floating-promises': 'error',
+      // Disabled here because typed linting would require a generated tsconfig.
+      '@typescript-eslint/no-floating-promises': 'off',
       '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
 
@@ -46,21 +47,9 @@ const config = [
     },
   },
   {
-    files: ['*.js', '*.cjs', '*.mjs'],
+    files: ['*.js', '*.mjs'],
     languageOptions: {
       parserOptions: { project: null },
-    },
-  },
-  {
-    files: ['**/*.test.ts'],
-    languageOptions: {
-      parserOptions: { project: null },
-    },
-    rules: {
-      '@typescript-eslint/no-floating-promises': 'off',
-      '@typescript-eslint/explicit-function-return-type': 'off',
-      'simple-import-sort/imports': 'off',
-      'simple-import-sort/exports': 'off',
     },
   },
 ];

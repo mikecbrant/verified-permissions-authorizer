@@ -4,7 +4,7 @@ import type {
 } from 'aws-lambda'
 import jwt from 'jsonwebtoken'
 
-import { isApiGatewayRequestAuthorizerEvent, isAppSyncAuthorizerEvent } from './events.js'
+import { isApiGatewayAuthorizerEvent, isAppSyncAuthorizerEvent } from './events.js'
 
 type JwtPayload = Record<string, unknown> & {
   exp?: number
@@ -13,20 +13,30 @@ type JwtPayload = Record<string, unknown> & {
   sub?: string
 }
 
-const parseJwtPayload = (token: string): JwtPayload | undefined => {
-  const decoded = jwt.decode(token)
-  if (!decoded || typeof decoded !== 'object') return undefined
-  const obj = decoded as JwtPayload
-  const now = Math.floor(Date.now() / 1000)
-  if (typeof obj.nbf === 'number' && now < obj.nbf) return undefined
-  if (typeof obj.exp === 'number' && now >= obj.exp) return undefined
-  return obj
+const parseJwtPayload = (
+  token: string,
+  key: jwt.Secret | jwt.GetPublicKeyOrSecret,
+  options?: jwt.VerifyOptions,
+): JwtPayload | undefined => {
+  try {
+    const base: jwt.VerifyOptions = {
+      // Default to enforcing exp and nbf; caller can override via options
+      clockTimestamp: Math.floor(Date.now() / 1000),
+      ...options,
+    }
+    // Enforce an explicit algorithms allowlist if caller didn't provide one.
+    if (!base.algorithms) base.algorithms = ['HS256']
+    const verified = jwt.verify(token, key, base)
+    return typeof verified === 'object' ? (verified as JwtPayload) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 const getBearerToken = (
   event: APIGatewayRequestAuthorizerEvent | AppSyncAuthorizerEvent,
 ): string | undefined => {
-  if (isApiGatewayRequestAuthorizerEvent(event)) {
+  if (isApiGatewayAuthorizerEvent(event)) {
     const header = event.headers?.authorization ?? event.headers?.Authorization
     if (!header) return undefined
     const m = /^Bearer\s+(.+)$/i.exec(header.trim())

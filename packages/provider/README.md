@@ -22,9 +22,9 @@ Tight coupling to the Lambda package
 - The provider embeds the compiled authorizer (`packages/lambda-authorizer/dist/index.mjs`) at build time via `go:embed`.
 - CI ensures that any change to the Lambda package triggers a provider release by bumping the Node SDK package and rebuilding the provider plugin with the new embedded artifact.
 
-Schema authoring
-- Author the provider schema in YAML at `packages/provider/schema.yaml`.
-- The JSON artifact `packages/provider/schema.json` is generated from the YAML for codegen/publishing.
+Schema
+- The provider schema is `packages/provider/schema.json`.
+- It is maintained alongside the Go provider; no YAML conversion step is required.
 
 Publishing
 - The provider schema (`packages/provider/schema.json`) is published to the Pulumi Registry.

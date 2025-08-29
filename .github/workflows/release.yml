@@ -179,7 +179,6 @@ jobs:
       - name: Publish package to Pulumi Registry (once)
         if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
         run: |
-          pnpm build:schema
           # Ensure provider/schema.json version matches the SDK version just published
           ver=${{ needs.version_or_publish.outputs.provider_version }}
           tmp=$(mktemp)

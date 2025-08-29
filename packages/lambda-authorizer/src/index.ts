@@ -3,61 +3,47 @@ import type {
   APIGatewayRequestAuthorizerEvent,
   AppSyncAuthorizerEvent,
   AppSyncAuthorizerResult,
-} from 'aws-lambda';
-import { GetPolicyStoreCommand } from '@aws-sdk/client-verifiedpermissions';
-import { getVerifiedPermissionsClient } from './aws/vpClient.js';
-import { buildApiGatewayPolicy, buildAppSyncAuthResult } from './policy.js';
-import { getBearerToken, parseJwtPayload } from './utils/jwt.js';
-import { isApiGatewayRequestAuthorizerEvent, isAppSyncAuthorizerEvent } from './utils/events.js';
+} from 'aws-lambda'
 
-type EmptyCtx = Record<string, never>;
+import { type AuthorizerEvent,processAuthorization } from './auth/process.js'
+import { isApiGatewayRequestAuthorizerEvent, isAppSyncAuthorizerEvent } from './utils/events.js'
+import { apiGatewayPolicy, appSyncAuthResult } from './utils/responses.js'
 
-const { POLICY_STORE_ID: policyStoreIdFromEnv } = process.env as Record<string, string | undefined>;
+type EmptyCtx = Record<string, never>
 
-type AuthorizerEvent = APIGatewayRequestAuthorizerEvent | AppSyncAuthorizerEvent;
+
 type AuthorizerResult =
   | APIGatewayAuthorizerWithContextResult<EmptyCtx>
-  | AppSyncAuthorizerResult;
+  | AppSyncAuthorizerResult
 
 const denyFor = (event: AuthorizerEvent): AuthorizerResult => {
   if (isApiGatewayRequestAuthorizerEvent(event)) {
-    return buildApiGatewayPolicy('Deny', event.methodArn, 'anonymous');
+    return apiGatewayPolicy('Deny', event.methodArn, 'anonymous')
   }
   if (isAppSyncAuthorizerEvent(event)) {
-    return buildAppSyncAuthResult(false);
+    return appSyncAuthResult(false)
   }
-  // Default safe deny
-  return buildAppSyncAuthResult(false);
-};
+  return appSyncAuthResult(false)
+}
 
 const handler = async (event: AuthorizerEvent): Promise<AuthorizerResult> => {
-  const token = getBearerToken(event);
-  if (!token) return denyFor(event);
+  const { POLICY_STORE_ID: storeId } = process.env as Record<string, string | undefined>
+  if (!storeId) return denyFor(event)
 
-  // Minimal local JWT validation (structure/exp/nbf)
-  const payload = parseJwtPayload(token);
-  if (!payload) return denyFor(event);
-
-  // Ensure a policy store is configured
-  const storeId = policyStoreIdFromEnv;
-  if (!storeId) return denyFor(event);
-
-  const client = getVerifiedPermissionsClient();
-  const cmd = new GetPolicyStoreCommand({ policyStoreId: storeId });
-
-  return client
-    .send(cmd)
-    .then(() => {
+  return processAuthorization(storeId, event)
+    .then((ok) => {
       if (isApiGatewayRequestAuthorizerEvent(event)) {
-        const principalId = typeof payload.sub === 'string' ? payload.sub : 'subject';
-        return buildApiGatewayPolicy('Allow', event.methodArn, principalId);
+        // We do not have principalId here; API GW requires a principal. Use anonymous when denied.
+        const principal = ok ? 'subject' : 'anonymous'
+        return apiGatewayPolicy(ok ? 'Allow' : 'Deny', event.methodArn, principal)
       }
-      if (isAppSyncAuthorizerEvent(event)) {
-        return buildAppSyncAuthResult(true);
-      }
-      return buildAppSyncAuthResult(false);
+      if (isAppSyncAuthorizerEvent(event)) return appSyncAuthResult(ok)
+      return appSyncAuthResult(false)
     })
-    .catch(() => denyFor(event));
-};
+    .catch((err) => {
+      console.error('[authorizer] error while processing auth:', err)
+      return denyFor(event)
+    })
+}
 
-export { handler };
+export { handler }

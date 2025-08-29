@@ -1,6 +1,7 @@
 import tsParser from '@typescript-eslint/parser';
 import tsEslintPlugin from '@typescript-eslint/eslint-plugin';
 import importPlugin from 'eslint-plugin-import';
+import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import promisePlugin from 'eslint-plugin-promise';
 
 /** @type {import('eslint').Linter.FlatConfig[]} */
@@ -16,11 +17,13 @@ const config = [
         sourceType: 'module',
       },
     },
-    plugins: { '@typescript-eslint': tsEslintPlugin, import: importPlugin, promise: promisePlugin },
+    plugins: { '@typescript-eslint': tsEslintPlugin, import: importPlugin, promise: promisePlugin, 'simple-import-sort': simpleImportSort },
     rules: {
       'func-style': ['error', 'expression'],
       'import/exports-last': 'error',
       'import/no-default-export': 'error',
+      'simple-import-sort/imports': 'error',
+      'simple-import-sort/exports': 'error',
       '@typescript-eslint/explicit-function-return-type': 'error',
       '@typescript-eslint/explicit-module-boundary-types': 'error',
       '@typescript-eslint/no-floating-promises': 'error',

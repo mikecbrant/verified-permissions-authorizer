@@ -3,7 +3,7 @@
 TypeScript Lambda Authorizer for AWS Verified Permissions. It is not limited to API Gateway; it can be used wherever a Lambda authorizer is supported, typically with API Gateway and AWS AppSync.
 
 Build and module format
-- Produces a single bundled ECMA Module file with a `.mjs` extension. CommonJS is not used in this repository.
+- Produces a single bundled ECMA Module file with a `.mjs` extension.
 - Exports a `handler` compatible with API Gateway Request Authorizer and an AWS AppSync Lambda Authorizer.
 
 Runtime

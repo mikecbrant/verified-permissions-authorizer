@@ -1,31 +1,37 @@
 import type {
   APIGatewayRequestAuthorizerEvent,
   AppSyncAuthorizerEvent,
-} from 'aws-lambda';
+} from 'aws-lambda'
 
-type AnyAuthorizerEvent = APIGatewayRequestAuthorizerEvent | AppSyncAuthorizerEvent | Record<string, unknown>;
+type AnyAuthorizerEvent = APIGatewayRequestAuthorizerEvent | AppSyncAuthorizerEvent
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null
 
 const isApiGatewayRequestAuthorizerEvent = (
-  event: AnyAuthorizerEvent,
+  event: unknown,
 ): event is APIGatewayRequestAuthorizerEvent => {
+  if (!isRecord(event)) return false
+  const methodArn = event['methodArn']
+  const headers = event['headers']
+  const typ = event['type']
   return (
-    typeof (event as APIGatewayRequestAuthorizerEvent).methodArn === 'string' &&
-    typeof (event as APIGatewayRequestAuthorizerEvent).type === 'string' &&
-    // APIGW Request Authorizer events have headers and resource/methodArn
-    'headers' in (event as object)
-  );
-};
+    typeof methodArn === 'string' &&
+    typeof typ === 'string' &&
+    typeof headers === 'object' && headers !== null
+  )
+}
 
-const isAppSyncAuthorizerEvent = (event: AnyAuthorizerEvent): event is AppSyncAuthorizerEvent => {
-  // AppSync Authorizer events include an `authorizationToken` and `requestContext` with `apiId`.
-  const maybe = event as Partial<AppSyncAuthorizerEvent>;
+const isAppSyncAuthorizerEvent = (event: unknown): event is AppSyncAuthorizerEvent => {
+  if (!isRecord(event)) return false
+  const authorizationToken = event['authorizationToken']
+  const requestContext = event['requestContext']
+  const apiId = isRecord(requestContext) ? requestContext['apiId'] : undefined
   return (
-    typeof maybe?.authorizationToken === 'string' &&
-    typeof maybe?.requestContext === 'object' &&
-    maybe?.requestContext !== null &&
-    typeof (maybe.requestContext as any).apiId === 'string'
-  );
-};
+    typeof authorizationToken === 'string' &&
+    typeof apiId === 'string'
+  )
+}
 
-export type { AnyAuthorizerEvent };
-export { isApiGatewayRequestAuthorizerEvent, isAppSyncAuthorizerEvent };
+export type { AnyAuthorizerEvent }
+export { isApiGatewayRequestAuthorizerEvent, isAppSyncAuthorizerEvent }

@@ -1,13 +1,8 @@
 node_modules/
 dist/
-.turbo/
+coverage/
 .pnpm-store/
 .DS_Store
 *.log
-coverage/
 .env*
 !.env.example
-.idea/
-.vscode/
-
-

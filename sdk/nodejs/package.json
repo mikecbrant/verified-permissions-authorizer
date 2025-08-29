@@ -17,10 +17,12 @@
     }
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsc -p tsconfig.json --emitDeclarationOnly && tsgo -p tsconfig.json && mv dist/index.js dist/index.mjs",
     "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings 0",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
     "format": "prettier --check .",
     "format:write": "prettier --write ."
   },
@@ -36,8 +38,25 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-promise": "^7.1.0",
+    "eslint-plugin-simple-import-sort": "^12.1.0",
     "prettier": "^3.3.3",
-    "tsup": "^8.2.4",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.0.5",
+    "@vitest/coverage-v8": "^2.0.5",
+    "@typescript/native-preview": "7.0.0-dev.20250828.1"
+  },
+  "vitest": {
+    "testTimeout": 30000,
+    "coverage": {
+      "provider": "v8",
+      "all": false,
+      "include": ["src/**"],
+      "thresholds": {
+        "lines": 100,
+        "functions": 100,
+        "branches": 100,
+        "statements": 100
+      }
+    }
   }
 }

@@ -1,5 +1,10 @@
 $schema: https://json.schemastore.org/prettierrc
-printWidth: 100
+printWidth: 80
+tabWidth: 2
+useTabs: false
+semi: false
 singleQuote: true
-trailingComma: all
-semi: true
+trailingComma: "all"
+bracketSpacing: true
+arrowParens: "always"
+endOfLine: "lf"

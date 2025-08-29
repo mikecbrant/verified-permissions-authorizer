@@ -1,12 +1,12 @@
 import type {
   APIGatewayAuthorizerWithContextResult,
-  PolicyDocument,
   AppSyncAuthorizerResult,
-} from 'aws-lambda';
+  PolicyDocument,
+} from 'aws-lambda'
 
-type EmptyCtx = Record<string, never>;
+type EmptyCtx = Record<string, never>
 
-const buildApiGatewayPolicy = (
+const apiGatewayPolicy = (
   effect: 'Allow' | 'Deny',
   resourceArn: string,
   principalId: string,
@@ -20,16 +20,12 @@ const buildApiGatewayPolicy = (
         Resource: resourceArn,
       },
     ],
-  };
-  return {
-    principalId,
-    policyDocument,
-    context: {},
-  };
-};
+  }
+  return { principalId, policyDocument, context: {} }
+}
 
-const buildAppSyncAuthResult = (isAuthorized: boolean): AppSyncAuthorizerResult => ({
+const appSyncAuthResult = (isAuthorized: boolean): AppSyncAuthorizerResult => ({
   isAuthorized,
-});
+})
 
-export { buildApiGatewayPolicy, buildAppSyncAuthResult };
+export { apiGatewayPolicy, appSyncAuthResult }

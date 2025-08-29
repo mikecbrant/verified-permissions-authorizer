@@ -1,0 +1,54 @@
+{
+  "name": "verified-permissions-lambda-authorizer",
+  "version": "0.0.1",
+  "private": false,
+  "description": "AWS Lambda Authorizer for AWS Verified Permissions (TypeScript, bundled)",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsgo --module ES2022 --target ES2023 --moduleResolution Bundler --outDir dist --rootDir src --declaration true --esModuleInterop true src/index.ts && mv dist/index.js dist/index.mjs",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit --module ES2022 --target ES2023 --moduleResolution Bundler --lib ES2023,DOM src/**/*.ts",
+    "lint": "eslint src --max-warnings 0",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "format": "prettier --check .",
+    "format:write": "prettier --write ."
+  },
+  "dependencies": {
+    "@aws-sdk/client-verifiedpermissions": "^3.872.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.146",
+    "@types/node": "^22.0.0",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "@typescript-eslint/parser": "^8.8.1",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-promise": "^7.1.0",
+    "eslint-plugin-simple-import-sort": "^12.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "vitest": "^2.0.5",
+    "@vitest/coverage-v8": "^2.0.5",
+    "@typescript/native-preview": "7.0.0-dev.20250828.1"
+  },
+  "vitest": {}
+}

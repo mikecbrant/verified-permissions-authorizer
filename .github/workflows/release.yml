@@ -1,0 +1,186 @@
+name: Release
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  version_or_publish:
+    name: Version or Publish
+    runs-on: ubuntu-latest
+    outputs:
+      should_release_provider: ${{ steps.detect.outputs.should_release_provider }}
+      provider_version: ${{ steps.detect.outputs.provider_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck + Lint
+        run: |
+          pnpm -r typecheck
+          pnpm -r lint
+
+      - name: Unit tests (Node packages) with 100% coverage
+        run: pnpm -r test
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'packages/provider/go.mod'
+
+      - name: Unit tests (Go provider) with coverage
+        run: |
+          cd packages/provider
+          go test ./... -coverprofile=coverage.out -covermode=count
+
+      - name: Build workspace (ts)
+        run: pnpm -r --parallel build
+
+      - name: Changesets – version or publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset version
+          publish: pnpm -r publish --access public
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Detect if provider was published
+        id: detect
+        run: |
+          set -euo pipefail
+          echo "published=${{ steps.changesets.outputs.published }}"
+          if [ "${{ steps.changesets.outputs.published }}" != "true" ]; then
+            echo "should_release_provider=false" >> $GITHUB_OUTPUT
+            echo "provider_version=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          # Parse published package list and check for Node SDK name
+          pkgs='${{ steps.changesets.outputs.publishedPackages }}'
+          echo "publishedPackages=$pkgs"
+          echo "$pkgs" | jq .
+          should=false
+          version=""
+          for row in $(echo "$pkgs" | jq -c '.[]'); do
+            name=$(echo "$row" | jq -r '.name')
+            ver=$(echo "$row" | jq -r '.version')
+            if [ "$name" = "pulumi-verified-permissions-authorizer" ]; then
+              should=true
+              version="$ver"
+            fi
+          done
+          echo "should_release_provider=$should" >> $GITHUB_OUTPUT
+          echo "provider_version=$version" >> $GITHUB_OUTPUT
+
+  build_and_publish_provider:
+    name: Build and Publish Provider
+    needs: version_or_publish
+    if: needs.version_or_publish.outputs.should_release_provider == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Lambda (to embed)
+        run: pnpm --filter verified-permissions-lambda-authorizer build
+
+      - name: Copy built lambda into provider assets
+        run: |
+          mkdir -p packages/provider/assets
+          cp packages/lambda-authorizer/dist/index.mjs packages/provider/assets/index.mjs
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'packages/provider/go.mod'
+
+      - name: Build provider plugin
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          cd packages/provider/cmd/pulumi-resource-verified-permissions-authorizer
+          go build -ldflags "-s -w" -o pulumi-resource-verified-permissions-authorizer
+          cd -
+          # Package
+          BIN=packages/provider/cmd/pulumi-resource-verified-permissions-authorizer/pulumi-resource-verified-permissions-authorizer
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            mv "$BIN" "${BIN}.exe"
+            BIN="${BIN}.exe"
+          fi
+          mkdir -p /tmp/pkg
+          cp "$BIN" /tmp/pkg/
+          tar czf pulumi-resource-verified-permissions-authorizer-v${{ needs.version_or_publish.outputs.provider_version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C /tmp/pkg $(basename "$BIN")
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version_or_publish.outputs.provider_version }}
+          files: |
+            pulumi-resource-verified-permissions-authorizer-v${{ needs.version_or_publish.outputs.provider_version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+
+      - name: Authenticate to Pulumi (for Registry publishing)
+        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+        uses: pulumi/auth-actions@v1
+        with:
+          access-token: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      - name: Publish package to Pulumi Registry (once)
+        if: ${{ matrix.goos == 'linux' && matrix.goarch == 'amd64' }}
+        run: |
+          # Ensure provider/schema.json version matches the SDK version just published
+          ver=${{ needs.version_or_publish.outputs.provider_version }}
+          tmp=$(mktemp)
+          jq ".version = \"$ver\"" packages/provider/schema.json > "$tmp" && mv "$tmp" packages/provider/schema.json
+          npx pulumi@latest package publish packages/provider/schema.json --readme packages/provider/README.md

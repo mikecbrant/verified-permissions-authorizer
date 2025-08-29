@@ -1,0 +1,65 @@
+{
+  "name": "pulumi-verified-permissions-authorizer",
+  "version": "0.0.1",
+  "description": "Pulumi Node.js SDK for the verified-permissions-authorizer component provider (Go).",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsgo --module ES2022 --target ES2022 --moduleResolution Bundler --outDir dist --rootDir src --declaration true src/index.ts && mv dist/index.js dist/index.mjs",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit --module ES2022 --target ES2022 --moduleResolution Bundler --lib ES2022,DOM src/index.ts",
+    "lint": "eslint src --max-warnings 0",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "format": "prettier --check .",
+    "format:write": "prettier --write ."
+  },
+  "dependencies": {
+    "@pulumi/pulumi": "^3.0.0",
+    "verified-permissions-lambda-authorizer": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "@typescript-eslint/parser": "^8.8.1",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-promise": "^7.1.0",
+    "eslint-plugin-simple-import-sort": "^12.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "vitest": "^2.0.5",
+    "@vitest/coverage-v8": "^2.0.5",
+    "@typescript/native-preview": "7.0.0-dev.20250828.1"
+  },
+  "vitest": {
+    "testTimeout": 30000,
+    "coverage": {
+      "provider": "v8",
+      "all": false,
+      "include": ["src/**"],
+      "thresholds": {
+        "lines": 100,
+        "functions": 100,
+        "branches": 100,
+        "statements": 100
+      }
+    }
+  }
+}

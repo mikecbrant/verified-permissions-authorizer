@@ -191,6 +191,45 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
         return res, err
     }
 
+    // Grant the Lambda role read-only access to the provider-managed DynamoDB table
+    // (table ARN and all index ARNs). Actions intentionally exclude any write or
+    // streams consumer permissions.
+    ddbReadDoc := awsiam.GetPolicyDocumentOutput(ctx, awsiam.GetPolicyDocumentOutputArgs{
+        Statements: awsiam.GetPolicyDocumentStatementArray{
+            // Table-only actions
+            awsiam.GetPolicyDocumentStatementArgs{
+                Effect: pulumi.StringPtr("Allow"),
+                Actions: pulumi.StringArray{
+                    pulumi.String("dynamodb:GetItem"),
+                    pulumi.String("dynamodb:BatchGetItem"),
+                    pulumi.String("dynamodb:DescribeTable"),
+                },
+                Resources: pulumi.StringArray{
+                    table.Arn,
+                },
+            },
+            // Actions that may target the table or its GSIs
+            awsiam.GetPolicyDocumentStatementArgs{
+                Effect: pulumi.StringPtr("Allow"),
+                Actions: pulumi.StringArray{
+                    pulumi.String("dynamodb:Query"),
+                    pulumi.String("dynamodb:Scan"),
+                },
+                Resources: pulumi.StringArray{
+                    table.Arn,
+                    pulumi.Sprintf("%s/index/*", table.Arn),
+                },
+            },
+        },
+    })
+
+    if _, err := awsiam.NewRolePolicy(ctx, fmt.Sprintf("%s-ddb-read", name), &awsiam.RolePolicyArgs{
+        Role:   role.Name,
+        Policy: ddbReadDoc.Json(),
+    }, opts); err != nil {
+        return res, err
+    }
+
     // 3) Lambda code: embed built authorizer
     code := pulumi.NewAssetArchive(map[string]pulumi.AssetOrArchive{
         "index.mjs": pulumi.NewStringAsset(authorizerIndexMjs),

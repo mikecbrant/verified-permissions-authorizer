@@ -36,6 +36,18 @@
             "type": "string"
           },
           "description": "Additional environment variables for the Lambda authorizer"
+        },
+        "ephemeralStage": {
+          "type": "boolean",
+          "description": "If true, treat the deployment stage as ephemeral (destroy resources on stack removal)",
+          "plain": true,
+          "default": false
+        },
+        "enableDynamoDbStreams": {
+          "type": "boolean",
+          "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the tenant table",
+          "plain": true,
+          "default": false
         }
       },
       "requiredInputs": [],
@@ -51,6 +63,14 @@
         },
         "roleArn": {
           "type": "string"
+        },
+        "TenantTableArn": {
+          "type": "string",
+          "description": "ARN of the DynamoDB tenant table"
+        },
+        "TenantTableStreamArn": {
+          "type": "string",
+          "description": "ARN of the DynamoDB tenant table stream (when streams are enabled)"
         }
       }
     }

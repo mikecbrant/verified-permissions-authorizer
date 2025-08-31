@@ -5,6 +5,7 @@ import (
     "fmt"
 
     awscloudwatch "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudwatch"
+    awsdynamodb "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/dynamodb"
     awsiam "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
     awslambda "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lambda"
     awsvp "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/verifiedpermissions"
@@ -32,6 +33,10 @@ type AuthorizerArgs struct {
     // Validation mode for the policy store: STRICT | OFF (default STRICT)
     ValidationMode *string           `pulumi:"validationMode,optional"`
     LambdaEnv      map[string]string `pulumi:"lambdaEnvironment,optional"`
+    // If true, treat the stage as ephemeral: destroy resources on stack removal (no retention).
+    EphemeralStage *bool `pulumi:"ephemeralStage,optional"`
+    // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
+    EnableDynamoDbStreams *bool `pulumi:"enableDynamoDbStreams,optional"`
 }
 
 // AuthorizerResult defines the outputs for the component resource.
@@ -57,6 +62,15 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
         def := "STRICT"
         args.ValidationMode = &def
     }
+    // Defaults for new provider-level options
+    if args.EphemeralStage == nil {
+        b := false
+        args.EphemeralStage = &b
+    }
+    if args.EnableDynamoDbStreams == nil {
+        b := false
+        args.EnableDynamoDbStreams = &b
+    }
 
     // 1) Verified Permissions Policy Store
     storeArgs := &awsvp.PolicyStoreArgs{
@@ -68,6 +82,53 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
         storeArgs.Description = pulumi.StringPtr(*args.Description)
     }
     store, err := awsvp.NewPolicyStore(ctx, fmt.Sprintf("%s-store", name), storeArgs, opts)
+    if err != nil {
+        return res, err
+    }
+
+    // 1b) DynamoDB single-table for tenants/users/roles
+    // Removal policy (retain on delete) only when NOT ephemeral
+    tableOpts := opts
+    if !*args.EphemeralStage {
+        tableOpts = pulumi.MergeResourceOptions(opts, pulumi.RetainOnDelete(true))
+    }
+
+    // Build base table args
+    targs := &awsdynamodb.TableArgs{
+        BillingMode: pulumi.String("PAY_PER_REQUEST"),
+        // Only attributes participating in the primary index or GSIs may be declared here.
+        // Items may still include GSI2PK/GSI2SK attributes; they are intentionally not part of AttributeDefinitions until GSI2 exists.
+        Attributes: awsdynamodb.TableAttributeArray{
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("PK"), Type: pulumi.String("S") },
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("SK"), Type: pulumi.String("S") },
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("GSI1PK"), Type: pulumi.String("S") },
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("GSI1SK"), Type: pulumi.String("S") },
+        },
+        HashKey:  pulumi.String("PK"),
+        RangeKey: pulumi.StringPtr("SK"),
+        GlobalSecondaryIndexes: awsdynamodb.TableGlobalSecondaryIndexArray{
+            awsdynamodb.TableGlobalSecondaryIndexArgs{
+                Name:            pulumi.String("GSI1"),
+                HashKey:         pulumi.String("GSI1PK"),
+                RangeKey:        pulumi.StringPtr("GSI1SK"),
+                ProjectionType:  pulumi.StringPtr("ALL"),
+            },
+        },
+    }
+
+    // For retained (non-ephemeral) stages enable deletion protection and PITR
+    if !*args.EphemeralStage {
+        targs.DeletionProtectionEnabled = pulumi.BoolPtr(true)
+        targs.PointInTimeRecovery = &awsdynamodb.TablePointInTimeRecoveryArgs{ Enabled: pulumi.Bool(true) }
+    }
+
+    // Streams optional
+    if *args.EnableDynamoDbStreams {
+        targs.StreamEnabled = pulumi.BoolPtr(true)
+        targs.StreamViewType = pulumi.StringPtr("NEW_AND_OLD_IMAGES")
+    }
+
+    table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-tenant", name), targs, tableOpts)
     if err != nil {
         return res, err
     }
@@ -168,10 +229,16 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
     }
 
     // Return outputs via infer.SetOutputs
-    return AuthorizerResult{}, infer.SetOutputs(map[string]any{
+    outputs := map[string]any{
         "policyStoreId":  store.ID(),
         "policyStoreArn": store.Arn,
         "functionArn":    fn.Arn,
         "roleArn":        role.Arn,
-    })
+        // Exports with exact names as required
+        "TenantTableArn": table.Arn,
+    }
+    if *args.EnableDynamoDbStreams {
+        outputs["TenantTableStreamArn"] = table.StreamArn
+    }
+    return AuthorizerResult{}, infer.SetOutputs(outputs)
 }

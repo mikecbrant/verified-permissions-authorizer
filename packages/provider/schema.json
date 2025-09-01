@@ -22,13 +22,17 @@
           "description": "Policy store description",
           "plain": true
         },
-        "validationMode": {
-          "type": "string",
-          "enum": [
-            "STRICT",
-            "OFF"
-          ],
-          "plain": true
+        "enableDynamoDbStream": {
+          "type": "boolean",
+          "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the tenant table",
+          "plain": true,
+          "default": false
+        },
+        "isEphemeral": {
+          "type": "boolean",
+          "description": "If true, treat the deployment stage as ephemeral (destroy resources on stack removal)",
+          "plain": true,
+          "default": false
         },
         "lambdaEnvironment": {
           "type": "object",
@@ -46,11 +50,19 @@
         "policyStoreArn": {
           "type": "string"
         },
-        "functionArn": {
+        "authorizerFunctionArn": {
           "type": "string"
         },
         "roleArn": {
           "type": "string"
+        },
+        "TenantTableArn": {
+          "type": "string",
+          "description": "ARN of the DynamoDB tenant table"
+        },
+        "TenantTableStreamArn": {
+          "type": "string",
+          "description": "ARN of the DynamoDB tenant table stream (when streams are enabled)"
         }
       }
     }

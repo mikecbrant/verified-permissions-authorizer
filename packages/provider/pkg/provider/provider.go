@@ -612,4 +612,3 @@ func provisionCognito(
 // options were intentionally removed from the public configuration surface. The
 // provider creates a minimal User Pool + client and binds it as the VP identity source.
 
-// ---- SES config + validation helpers moved to ses_helpers.go ----

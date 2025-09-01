@@ -102,11 +102,7 @@ func NewAuthorizerWithPolicyStore(
         tableOpt = pulumi.MergeResourceOptions(tableOpt, pulumi.RetainOnDelete(true))
     }
 
-    // Preserve existing stacks that used the previous logical name suffix "-tenant" by
-    // aliasing the old resource name to the new one. This avoids replacement when upgrading.
-    tableOpt = pulumi.MergeResourceOptions(tableOpt, pulumi.Aliases([]pulumi.Alias{
-        {Name: pulumi.String(fmt.Sprintf("%s-tenant", name))},
-    }))
+    
 
     // Build base table args
     targs := &awsdynamodb.TableArgs{

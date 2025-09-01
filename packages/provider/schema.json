@@ -108,16 +108,6 @@
           "type": "string",
           "description": "ARN of the DynamoDB auth table stream (when streams are enabled)"
         },
-        "TenantTableArn": {
-          "type": "string",
-          "description": "Deprecated output alias; use AuthTableArn.",
-          "deprecationMessage": "Deprecated: use AuthTableArn"
-        },
-        "TenantTableStreamArn": {
-          "type": "string",
-          "description": "Deprecated output alias; use AuthTableStreamArn.",
-          "deprecationMessage": "Deprecated: use AuthTableStreamArn"
-        },
         "authRoleArn": { "type": "string" },
         "authorizerFunctionArn": { "type": "string" },
         "identityPoolId": { "type": "string" },

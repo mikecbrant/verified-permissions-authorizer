@@ -39,13 +39,9 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   public readonly policyStoreArn!: pulumi.Output<string>;
   public readonly authorizerFunctionArn!: pulumi.Output<string>;
   public readonly roleArn!: pulumi.Output<string>;
-  // Renamed outputs: prefer `AuthTable*`; still resolve values if provider uses legacy `TenantTable*` keys.
+  // DynamoDB auth table outputs
   public readonly AuthTableArn!: pulumi.Output<string>;
   public readonly AuthTableStreamArn!: pulumi.Output<string | undefined>;
-  /** @deprecated Use AuthTableArn */
-  public readonly TenantTableArn!: pulumi.Output<string>;
-  /** @deprecated Use AuthTableStreamArn */
-  public readonly TenantTableStreamArn!: pulumi.Output<string | undefined>;
   // Optional Cognito outputs
   public readonly userPoolId!: pulumi.Output<string | undefined>;
   public readonly userPoolArn!: pulumi.Output<string | undefined>;
@@ -72,45 +68,23 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
     );
     const get = (n: string): pulumi.Output<any> =>
       (this as any).getOutput(n) as pulumi.Output<any>;
-    const getFirstOrThrow = <T>(...names: string[]): pulumi.Output<T> =>
-      pulumi
-        .all(names.map((n) => get(n)))
-        .apply((vals) => {
-          for (const v of vals) {
-            if (v !== undefined && v !== null) return v as T;
-          }
-          throw new Error(
-            `None of the expected outputs were set: ${names.join(", ")}`,
-          );
-        }) as pulumi.Output<T>;
-    const getFirstOptional = <T>(
-      ...names: string[]
-    ): pulumi.Output<T | undefined> =>
-      pulumi
-        .all(names.map((n) => get(n)))
-        .apply((vals) => {
-          for (const v of vals) {
-            if (v !== undefined && v !== null) return v as T;
-          }
-          return undefined;
-        }) as pulumi.Output<T | undefined>;
+    const req = <T>(name: string): pulumi.Output<T> =>
+      get(name).apply((v) => {
+        if (v === undefined || v === null) {
+          throw new Error(`Required output not set: ${name}`);
+        }
+        return v as T;
+      }) as pulumi.Output<T>;
+    const opt = <T>(name: string): pulumi.Output<T | undefined> =>
+      get(name).apply((v) => (v === null ? undefined : (v as T | undefined)));
     this.policyStoreId = get("policyStoreId") as pulumi.Output<string>;
     this.policyStoreArn = get("policyStoreArn") as pulumi.Output<string>;
     this.authorizerFunctionArn = get(
       "authorizerFunctionArn",
     ) as pulumi.Output<string>;
     this.roleArn = get("roleArn") as pulumi.Output<string>;
-    this.AuthTableArn = getFirstOrThrow<string>(
-      "AuthTableArn",
-      "TenantTableArn",
-    );
-    this.AuthTableStreamArn = getFirstOptional<string>(
-      "AuthTableStreamArn",
-      "TenantTableStreamArn",
-    );
-    // Deprecated aliases for backward compatibility
-    this.TenantTableArn = this.AuthTableArn;
-    this.TenantTableStreamArn = this.AuthTableStreamArn;
+    this.AuthTableArn = req<string>("AuthTableArn");
+    this.AuthTableStreamArn = opt<string>("AuthTableStreamArn");
     this.userPoolId = get("userPoolId") as pulumi.Output<string | undefined>;
     this.userPoolArn = get("userPoolArn") as pulumi.Output<string | undefined>;
     this.userPoolDomain = get("userPoolDomain") as pulumi.Output<

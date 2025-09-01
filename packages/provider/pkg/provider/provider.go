@@ -40,7 +40,7 @@ type AuthorizerArgs struct {
     Description *string `pulumi:"description,optional"`
     // When true, resources are retained on delete and protected from deletion (where supported).
     RetainOnDelete *bool `pulumi:"retainOnDelete,optional"`
-    // DynamoDB-related options for the provider-managed tenant table.
+    // DynamoDB-related options for the provider-managed auth table.
     Dynamo *DynamoConfig `pulumi:"dynamo,optional"`
     // Settings for the bundled Lambda authorizer
     Lambda *LambdaConfig `pulumi:"lambda,optional"`
@@ -58,7 +58,7 @@ type LambdaConfig struct {
 
 // DynamoConfig groups DynamoDB table-related provider options.
 type DynamoConfig struct {
-    // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
+    // If true, enable DynamoDB Streams on the auth table (NEW_AND_OLD_IMAGES).
     EnableDynamoDbStream *bool `pulumi:"enableDynamoDbStream,optional"`
 }
 
@@ -72,10 +72,8 @@ type AuthorizerWithPolicyStore struct {
     AuthorizerFunctionArn pulumi.StringOutput `pulumi:"authorizerFunctionArn"`
     RoleArn        pulumi.StringOutput `pulumi:"roleArn"`
     // DynamoDB table outputs (exported with PascalCase to match schema/docs)
-    AuthTableArn         pulumi.StringOutput    `pulumi:"AuthTableArn"`
-    AuthTableStreamArn   pulumi.StringPtrOutput `pulumi:"AuthTableStreamArn,optional"`
-    TenantTableArn       pulumi.StringOutput    `pulumi:"TenantTableArn"`
-    TenantTableStreamArn pulumi.StringPtrOutput `pulumi:"TenantTableStreamArn,optional"`
+    AuthTableArn       pulumi.StringOutput    `pulumi:"AuthTableArn"`
+    AuthTableStreamArn pulumi.StringPtrOutput `pulumi:"AuthTableStreamArn,optional"`
 
     // Optional Cognito-related outputs
     UserPoolId        pulumi.StringPtrOutput   `pulumi:"userPoolId,optional"`
@@ -135,7 +133,7 @@ func NewAuthorizerWithPolicyStore(
         return nil, err
     }
 
-    // 1b) DynamoDB single-table for tenants/users/roles
+    // 1b) DynamoDB single-table for auth/identity/roles data
     // Always parent to the component; retain on delete only when retention is enabled
     tableOpt := retOpts
 
@@ -367,12 +365,9 @@ func NewAuthorizerWithPolicyStore(
     comp.PolicyStoreArn = store.Arn
     comp.AuthorizerFunctionArn = fn.Arn
     comp.RoleArn = role.Arn
-    // Emit both canonical (AuthTable*) and deprecated (TenantTable*) outputs for compatibility
-    comp.AuthTableArn = table.Arn
-    comp.TenantTableArn = table.Arn
     // StreamArn is only non-nil when streams are enabled on the table
+    comp.AuthTableArn = table.Arn
     comp.AuthTableStreamArn = table.StreamArn
-    comp.TenantTableStreamArn = table.StreamArn
 
     // 5) Optional Cognito provisioning + Verified Permissions identity source
     if args.Cognito != nil {

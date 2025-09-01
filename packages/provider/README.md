@@ -15,7 +15,7 @@ Interface (stable)
     - `memorySize?` (MB; default `128`)
     - `reservedConcurrency?` (default `1`)
     - `provisionedConcurrency?` (units; default `0` to disable)
-  - `dynamo?` — DynamoDB-related options for the provider-managed tenant table
+  - `dynamo?` — DynamoDB-related options for the provider-managed auth table
     - `enableDynamoDbStream?` (boolean, default `false`)
   - `cognito?` — provision a Cognito User Pool and set it as the Verified Permissions identity source
     - `signInAliases?` — array of allowed values: `email`, `phone`, `preferredUsername` (default: `["email"]`). `username` is intentionally not supported.
@@ -25,7 +25,7 @@ Interface (stable)
       - `replyToEmail` (string, optional)
       - `configurationSet` (string, optional)
 - Outputs:
-  - `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `TenantTableArn`, `TenantTableStreamArn?`
+  - `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `AuthTableArn`, `AuthTableStreamArn?`
   - When Cognito is provisioned: `userPoolId`, `userPoolArn`, `userPoolDomain`, `identityPoolId?`, `authRoleArn?`, `unauthRoleArn?`, `userPoolClientIds[]`, `parameters` (includes `USER_POOL_ID`)
 
 Lambda contract (fixed)

@@ -48,8 +48,8 @@ type AuthorizerWithPolicyStore struct {
     AuthorizerFunctionArn pulumi.StringOutput `pulumi:"authorizerFunctionArn"`
     RoleArn        pulumi.StringOutput `pulumi:"roleArn"`
     // DynamoDB table outputs (exported with PascalCase to match schema/docs)
-    TenantTableArn       pulumi.StringOutput    `pulumi:"TenantTableArn"`
-    TenantTableStreamArn pulumi.StringPtrOutput `pulumi:"TenantTableStreamArn,optional"`
+    AuthTableArn         pulumi.StringOutput    `pulumi:"AuthTableArn"`
+    AuthTableStreamArn   pulumi.StringPtrOutput `pulumi:"AuthTableStreamArn,optional"`
 }
 
 func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
@@ -286,9 +286,9 @@ func NewAuthorizerWithPolicyStore(
     comp.PolicyStoreArn = store.Arn
     comp.AuthorizerFunctionArn = fn.Arn
     comp.RoleArn = role.Arn
-    comp.TenantTableArn = table.Arn
+    comp.AuthTableArn = table.Arn
     // StreamArn is only non-nil when streams are enabled on the table
-    comp.TenantTableStreamArn = table.StreamArn
+    comp.AuthTableStreamArn = table.StreamArn
 
     return comp, nil
 }

@@ -56,11 +56,11 @@
         "roleArn": {
           "type": "string"
         },
-        "TenantTableArn": {
+        "AuthTableArn": {
           "type": "string",
           "description": "ARN of the DynamoDB auth table"
         },
-        "TenantTableStreamArn": {
+        "AuthTableStreamArn": {
           "type": "string",
           "description": "ARN of the DynamoDB auth table stream (when streams are enabled)"
         }

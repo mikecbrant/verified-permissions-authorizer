@@ -8,17 +8,17 @@ This is a multi-language Pulumi Component Provider implemented in Go. It provisi
 Interface (stable)
 - Resource token: `verified-permissions-authorizer:index:AuthorizerWithPolicyStore`
 - Inputs: `description?`, `lambdaEnvironment?` (map<string,string>), `enableDynamoDbStream?` (boolean, default `false`), `isEphemeral?` (boolean, default `false`)
-- Outputs: `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `TenantTableArn`, `TenantTableStreamArn?`
+- Outputs: `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `AuthTableArn`, `AuthTableStreamArn?`
 
-Note: Output property names retain the legacy `Tenant*` prefix for compatibility (e.g., `TenantTableArn`, `TenantTableStreamArn`).
+
 
 ## DynamoDB auth table
 - Keys/attributes: `PK` (hash), `SK` (range), `GSI1PK` (hash), `GSI1SK` (range), `GSI2PK` (hash), `GSI2SK` (range)
 - GSIs: `GSI1` and `GSI2` (ProjectionType `ALL`)
 - Billing mode: `PAY_PER_REQUEST`
 - Stream behavior (controlled by `enableDynamoDbStream`):
-  - `true`: stream enabled with `NEW_AND_OLD_IMAGES`; `TenantTableStreamArn` is set
-  - `false`: stream disabled; `TenantTableStreamArn` is not set
+  - `true`: stream enabled with `NEW_AND_OLD_IMAGES`; `AuthTableStreamArn` is set
+  - `false`: stream disabled; `AuthTableStreamArn` is not set
 - Retention semantics (controlled by `isEphemeral`):
   - Non‑ephemeral (`false` or unset): table is retained on stack deletion
   - Ephemeral (`true`): table is not retained on deletion

@@ -36,6 +36,72 @@
             "type": "string"
           },
           "description": "Additional environment variables for the Lambda authorizer"
+        },
+        "isEphemeral": {
+          "type": "boolean",
+          "description": "When true, resources are not retained and deletion protection is disabled. When false, resources are retained on delete and Cognito deletion protection is enabled.",
+          "plain": true
+        },
+        "cognito": {
+          "type": "object",
+          "description": "Provision an AWS Cognito User Pool and configure it as the Verified Permissions identity source.",
+          "properties": {
+            "identityPoolFederation": { "type": "boolean" },
+            "signInAliases": {
+              "type": "object",
+              "properties": {
+                "username": { "type": "boolean" },
+                "email": { "type": "boolean" },
+                "phone": { "type": "boolean" },
+                "preferredUsername": { "type": "boolean" }
+              }
+            },
+            "emailSendingAccount": { "type": "string", "enum": ["COGNITO_DEFAULT", "DEVELOPER"] },
+            "mfa": { "type": "string", "enum": ["OFF", "ON", "OPTIONAL"] },
+            "mfaMessage": { "type": "string" },
+            "accountRecovery": { "type": "string" },
+            "autoVerify": {
+              "type": "object",
+              "properties": { "email": { "type": "boolean" }, "phone": { "type": "boolean" } }
+            },
+            "advancedSecurityMode": { "type": "string", "enum": ["OFF", "AUDIT", "ENFORCED"] },
+            "userInvitation": {
+              "type": "object",
+              "properties": { "emailSubject": { "type": "string" }, "emailBody": { "type": "string" }, "smsMessage": { "type": "string" } }
+            },
+            "userVerification": {
+              "type": "object",
+              "properties": { "emailSubject": { "type": "string" }, "emailBody": { "type": "string" }, "smsMessage": { "type": "string" } }
+            },
+            "customAttributes": {
+              "type": "object",
+              "properties": {
+                "globalRoles": { "type": "boolean" },
+                "tenantId": { "type": "boolean" },
+                "tenantName": { "type": "boolean" },
+                "userId": { "type": "boolean" }
+              }
+            },
+            "domain": {
+              "type": "object",
+              "properties": {
+                "domainName": { "type": "string" },
+                "certificateArn": { "type": "string" }
+              }
+            },
+            "triggers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "enabled": { "type": "boolean" },
+                  "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+                  "permissions": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            },
+            "clients": { "type": "array", "items": { "type": "string" } }
+          }
         }
       },
       "requiredInputs": [],
@@ -51,6 +117,15 @@
         },
         "roleArn": {
           "type": "string"
+        },
+        "userPoolId": { "type": "string" },
+        "userPoolArn": { "type": "string" },
+        "userPoolDomain": { "type": "string" },
+        "identityPoolId": { "type": "string" },
+        "authRoleArn": { "type": "string" },
+        "unauthRoleArn": { "type": "string" },
+        "userPoolClientIds": { "type": "array", "items": { "type": "string" } },
+        "parameters": { "type": "object", "additionalProperties": { "type": "string" } }
         }
       }
     }

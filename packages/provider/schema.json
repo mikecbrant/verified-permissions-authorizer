@@ -22,6 +22,27 @@
           "description": "Policy store description",
           "plain": true
         },
+        "authorizerLambda": {
+          "type": "object",
+          "description": "Settings for the bundled Lambda authorizer.",
+          "properties": {
+            "memorySize": {
+              "type": "integer",
+              "description": "Memory size for the Lambda function in MB.",
+              "default": 128
+            },
+            "reservedConcurrency": {
+              "type": "integer",
+              "description": "Reserved concurrency limit for the Lambda function.",
+              "default": 1
+            },
+            "provisionedConcurrency": {
+              "type": "integer",
+              "description": "Provisioned concurrency units for the Lambda function (0 disables).",
+              "default": 0
+            }
+          }
+        },
         "enableDynamoDbStream": {
           "type": "boolean",
           "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the tenant table",
@@ -34,72 +55,16 @@
           "plain": true,
           "default": false
         },
-        "lambdaEnvironment": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Additional environment variables for the Lambda authorizer"
-        },
         "cognito": {
           "type": "object",
           "description": "Provision an AWS Cognito User Pool and configure it as the Verified Permissions identity source.",
           "properties": {
-            "identityPoolFederation": { "type": "boolean" },
             "signInAliases": {
-              "type": "object",
-              "properties": {
-                "username": { "type": "boolean" },
-                "email": { "type": "boolean" },
-                "phone": { "type": "boolean" },
-                "preferredUsername": { "type": "boolean" }
-              }
-            },
-            "emailSendingAccount": { "type": "string", "enum": ["COGNITO_DEFAULT", "DEVELOPER"] },
-            "mfa": { "type": "string", "enum": ["OFF", "ON", "OPTIONAL"] },
-            "mfaMessage": { "type": "string" },
-            "accountRecovery": { "type": "string" },
-            "autoVerify": {
-              "type": "object",
-              "properties": { "email": { "type": "boolean" }, "phone": { "type": "boolean" } }
-            },
-            "advancedSecurityMode": { "type": "string", "enum": ["OFF", "AUDIT", "ENFORCED"] },
-            "userInvitation": {
-              "type": "object",
-              "properties": { "emailSubject": { "type": "string" }, "emailBody": { "type": "string" }, "smsMessage": { "type": "string" } }
-            },
-            "userVerification": {
-              "type": "object",
-              "properties": { "emailSubject": { "type": "string" }, "emailBody": { "type": "string" }, "smsMessage": { "type": "string" } }
-            },
-            "customAttributes": {
-              "type": "object",
-              "properties": {
-                "globalRoles": { "type": "boolean" },
-                "tenantId": { "type": "boolean" },
-                "tenantName": { "type": "boolean" },
-                "userId": { "type": "boolean" }
-              }
-            },
-            "domain": {
-              "type": "object",
-              "properties": {
-                "domainName": { "type": "string" },
-                "certificateArn": { "type": "string" }
-              }
-            },
-            "triggers": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "properties": {
-                  "enabled": { "type": "boolean" },
-                  "environment": { "type": "object", "additionalProperties": { "type": "string" } },
-                  "permissions": { "type": "array", "items": { "type": "string" } }
-                }
-              }
-            },
-            "clients": { "type": "array", "items": { "type": "string" } }
+              "type": "array",
+              "description": "Allowed sign-in identifiers for the User Pool.",
+              "items": { "type": "string", "enum": ["email", "phone", "preferredUsername"] },
+              "default": ["email"]
+            }
           }
         }
       },

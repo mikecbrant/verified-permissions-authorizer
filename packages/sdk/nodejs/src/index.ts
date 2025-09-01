@@ -1,38 +1,22 @@
 import * as pulumi from '@pulumi/pulumi'
 
-type CognitoTriggerConfig = {
-  enabled?: pulumi.Input<boolean>
-  environment?: pulumi.Input<Record<string, pulumi.Input<string>>>
-  permissions?: pulumi.Input<pulumi.Input<string>[]>
-}
+type CognitoSignInAlias = 'email' | 'phone' | 'preferredUsername'
 
 type CognitoConfig = {
-  identityPoolFederation?: pulumi.Input<boolean>
-  signInAliases?: pulumi.Input<{
-    username?: pulumi.Input<boolean>
-    email?: pulumi.Input<boolean>
-    phone?: pulumi.Input<boolean>
-    preferredUsername?: pulumi.Input<boolean>
-  }>
-  emailSendingAccount?: pulumi.Input<'COGNITO_DEFAULT' | 'DEVELOPER'>
-  mfa?: pulumi.Input<'OFF' | 'ON' | 'OPTIONAL'>
-  mfaMessage?: pulumi.Input<string>
-  accountRecovery?: pulumi.Input<string>
-  autoVerify?: pulumi.Input<{ email?: pulumi.Input<boolean>; phone?: pulumi.Input<boolean> }>
-  advancedSecurityMode?: pulumi.Input<'OFF' | 'AUDIT' | 'ENFORCED'>
-  userInvitation?: pulumi.Input<{ emailSubject?: pulumi.Input<string>; emailBody?: pulumi.Input<string>; smsMessage?: pulumi.Input<string> }>
-  userVerification?: pulumi.Input<{ emailSubject?: pulumi.Input<string>; emailBody?: pulumi.Input<string>; smsMessage?: pulumi.Input<string> }>
-  customAttributes?: pulumi.Input<{ globalRoles?: pulumi.Input<boolean>; tenantId?: pulumi.Input<boolean>; tenantName?: pulumi.Input<boolean>; userId?: pulumi.Input<boolean> }>
-  domain?: pulumi.Input<{ domainName?: pulumi.Input<string>; certificateArn?: pulumi.Input<string> }>
-  triggers?: pulumi.Input<Record<string, pulumi.Input<CognitoTriggerConfig>>>
-  clients?: pulumi.Input<pulumi.Input<string>[]>
+  signInAliases?: pulumi.Input<pulumi.Input<CognitoSignInAlias>[]>
+}
+
+type AuthorizerLambdaConfig = {
+  memorySize?: pulumi.Input<number>
+  reservedConcurrency?: pulumi.Input<number>
+  provisionedConcurrency?: pulumi.Input<number>
 }
 
 type AuthorizerWithPolicyStoreArgs = {
   description?: pulumi.Input<string>
   enableDynamoDbStream?: pulumi.Input<boolean>
   isEphemeral?: pulumi.Input<boolean>
-  lambdaEnvironment?: pulumi.Input<Record<string, pulumi.Input<string>>>
+  authorizerLambda?: pulumi.Input<AuthorizerLambdaConfig>
   cognito?: pulumi.Input<CognitoConfig>
 }
 
@@ -73,4 +57,10 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   }
 }
 
-export { AuthorizerWithPolicyStore, type AuthorizerWithPolicyStoreArgs, type CognitoConfig, type CognitoTriggerConfig }
+export {
+  type AuthorizerLambdaConfig,
+  AuthorizerWithPolicyStore,
+  type AuthorizerWithPolicyStoreArgs,
+  type CognitoConfig,
+  type CognitoSignInAlias,
+}

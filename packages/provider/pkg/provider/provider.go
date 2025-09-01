@@ -3,8 +3,6 @@ package provider
 import (
     "embed"
     "fmt"
-    "regexp"
-    "strings"
 
     aws "github.com/pulumi/pulumi-aws/sdk/v6/go/aws"
     awscognito "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cognito"
@@ -21,9 +19,8 @@ import (
 //go:embed assets/index.mjs
 var authorizerIndexMjs string
 
-// Cognito trigger stub (Node.js) used when lifecycle triggers are enabled
-//go:embed ../../assets/cognito-trigger-stub.mjs
-var cognitoTriggerStub string
+// Note: The provider also includes a minimal Cognito trigger stub under
+// packages/provider/assets/cognito-trigger-stub.mjs for future use.
 
 // NewProvider wires up the multi-language component provider surface.
 func NewProvider() (p.Provider, error) {
@@ -38,14 +35,22 @@ func NewProvider() (p.Provider, error) {
 type AuthorizerArgs struct {
     // Policy store description
     Description *string `pulumi:"description,optional"`
-    LambdaEnv   map[string]string `pulumi:"lambdaEnvironment,optional"`
     // If true, treat the stage as ephemeral: destroy resources on stack removal (no retention).
     IsEphemeral *bool `pulumi:"isEphemeral,optional"`
     // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
     EnableDynamoDbStream *bool `pulumi:"enableDynamoDbStream,optional"`
+    // Settings for the bundled Lambda authorizer
+    AuthorizerLambda *AuthorizerLambdaConfig `pulumi:"authorizerLambda,optional"`
     // Optional Cognito configuration. When provided, a Cognito User Pool will be provisioned
     // and configured as the Verified Permissions Identity Source for the created policy store.
     Cognito *CognitoConfig `pulumi:"cognito,optional"`
+}
+
+// AuthorizerLambdaConfig exposes a narrow set of tuning knobs for the Lambda authorizer.
+type AuthorizerLambdaConfig struct {
+    MemorySize             *int `pulumi:"memorySize,optional"`
+    ReservedConcurrency    *int `pulumi:"reservedConcurrency,optional"`
+    ProvisionedConcurrency *int `pulumi:"provisionedConcurrency,optional"`
 }
 
 // AuthorizerWithPolicyStore is the component implementing the Construct.
@@ -267,27 +272,67 @@ func NewAuthorizerWithPolicyStore(
         "index.mjs": pulumi.NewStringAsset(authorizerIndexMjs),
     })
 
+    // Defaults for authorizer Lambda config
+    if args.AuthorizerLambda == nil {
+        args.AuthorizerLambda = &AuthorizerLambdaConfig{}
+    }
+    mem := 128
+    if args.AuthorizerLambda.MemorySize != nil {
+        mem = *args.AuthorizerLambda.MemorySize
+    }
+    rc := 1
+    if args.AuthorizerLambda.ReservedConcurrency != nil {
+        rc = *args.AuthorizerLambda.ReservedConcurrency
+    }
+    pc := 0
+    if args.AuthorizerLambda.ProvisionedConcurrency != nil {
+        pc = *args.AuthorizerLambda.ProvisionedConcurrency
+    }
+
     fn, err := awslambda.NewFunction(ctx, fmt.Sprintf("%s-authorizer", name), &awslambda.FunctionArgs{
         Role:    role.Arn,
         Runtime: pulumi.String("nodejs22.x"), // fixed; not configurable
         Handler: pulumi.String("index.handler"),
         Code:    code,
         Environment: &awslambda.FunctionEnvironmentArgs{
-            Variables: pulumi.StringMap(func() map[string]pulumi.StringInput {
-                m := map[string]pulumi.StringInput{
-                    "POLICY_STORE_ID": store.ID().ToStringOutput(),
-                }
-                for k, v := range args.LambdaEnv {
-                    m[k] = pulumi.String(v)
-                }
-                return m
-            }()),
+            Variables: pulumi.StringMap(map[string]pulumi.StringInput{
+                "POLICY_STORE_ID": store.ID().ToStringOutput(),
+            }),
         },
         Architectures: pulumi.StringArray{pulumi.String("arm64")},
         Timeout:       pulumi.Int(10),
+        MemorySize:    pulumi.Int(mem),
+        ReservedConcurrentExecutions: pulumi.Int(rc),
     }, retOpts)
     if err != nil {
         return nil, err
+    }
+
+    // Optional provisioned concurrency (disabled by default when pc == 0)
+    if pc > 0 {
+        // Create a version and alias, then attach provisioned concurrency to the alias
+        ver, err := awslambda.NewVersion(ctx, fmt.Sprintf("%s-authorizer-v", name), &awslambda.VersionArgs{
+            FunctionName: fn.Name,
+        }, retOpts)
+        if err != nil {
+            return nil, err
+        }
+        alias, err := awslambda.NewAlias(ctx, fmt.Sprintf("%s-authorizer-live", name), &awslambda.AliasArgs{
+            Name:            pulumi.String("live"),
+            FunctionName:    fn.Name,
+            FunctionVersion: ver.Version,
+        }, retOpts)
+        if err != nil {
+            return nil, err
+        }
+        _, err = awslambda.NewProvisionedConcurrencyConfig(ctx, fmt.Sprintf("%s-authorizer-pc", name), &awslambda.ProvisionedConcurrencyConfigArgs{
+            FunctionName:                    fn.Name,
+            Qualifier:                        alias.Name,
+            ProvisionedConcurrentExecutions: pulumi.Int(pc),
+        }, retOpts)
+        if err != nil {
+            return nil, err
+        }
     }
 
     // 4) Log group
@@ -309,20 +354,14 @@ func NewAuthorizerWithPolicyStore(
 
     // 5) Optional Cognito provisioning + Verified Permissions identity source
     if args.Cognito != nil {
-        cog, idp, err := provisionCognito(ctx, name, store, *args.Cognito, *args.IsEphemeral, retOpts)
+        cog, err := provisionCognito(ctx, name, store, *args.Cognito, *args.IsEphemeral, retOpts)
         if err != nil {
             return nil, err
         }
         comp.UserPoolId = cog.UserPoolId.ToStringPtrOutput()
         comp.UserPoolArn = cog.UserPoolArn.ToStringPtrOutput()
-        comp.UserPoolDomain = cog.Domain
         comp.UserPoolClientIds = cog.ClientIds
         comp.Parameters = cog.Parameters
-        if idp != nil {
-            comp.IdentityPoolId = idp.IdentityPoolId.ToStringPtrOutput()
-            comp.AuthRoleArn = idp.AuthRoleArn.ToStringPtrOutput()
-            comp.UnauthRoleArn = idp.UnauthRoleArn.ToStringPtrOutput()
-        }
     }
 
     return comp, nil
@@ -338,102 +377,16 @@ func withRetention(opts pulumi.ResourceOption, retain bool) pulumi.ResourceOptio
 
 // ---- Cognito configuration types ----
 
-type SignInAliases struct {
-    Username          *bool `pulumi:"username,optional"`
-    Email             *bool `pulumi:"email,optional"`
-    Phone             *bool `pulumi:"phone,optional"`
-    PreferredUsername *bool `pulumi:"preferredUsername,optional"`
-}
-
-type AutoVerify struct {
-    Email *bool `pulumi:"email,optional"`
-    Phone *bool `pulumi:"phone,optional"`
-}
-
-type InviteTemplate struct {
-    EmailSubject *string `pulumi:"emailSubject,optional"`
-    EmailBody    *string `pulumi:"emailBody,optional"`
-    SmsMessage   *string `pulumi:"smsMessage,optional"`
-}
-
-type VerificationTemplate struct {
-    EmailSubject *string `pulumi:"emailSubject,optional"`
-    EmailBody    *string `pulumi:"emailBody,optional"`
-    SmsMessage   *string `pulumi:"smsMessage,optional"`
-}
-
-type CustomAttributes struct {
-    GlobalRoles *bool `pulumi:"globalRoles,optional"`
-    TenantId    *bool `pulumi:"tenantId,optional"`
-    TenantName  *bool `pulumi:"tenantName,optional"`
-    UserId      *bool `pulumi:"userId,optional"`
-}
-
-type DomainConfig struct {
-    CertificateArn *string `pulumi:"certificateArn,optional"`
-    DomainName     *string `pulumi:"domainName,optional"`
-}
-
-type TriggerConfig struct {
-    Enabled     *bool             `pulumi:"enabled,optional"`
-    Environment map[string]string `pulumi:"environment,optional"`
-    Permissions []string          `pulumi:"permissions,optional"`
-}
-
 type CognitoConfig struct {
-    // Whether to also create an Identity Pool and default authenticated/unauthenticated roles
-    IdentityPoolFederation *bool `pulumi:"identityPoolFederation,optional"`
-
-    // Sign-in aliases to enable (username is implicit). Maps to Cognito alias attributes.
-    SignInAliases *SignInAliases `pulumi:"signInAliases,optional"`
-
-    // Email sending account; 'COGNITO_DEFAULT' recommended when not using SES.
-    EmailSendingAccount *string `pulumi:"emailSendingAccount,optional"`
-
-    // MFA configuration (OFF | ON | OPTIONAL). OPTIONAL by default.
-    Mfa *string `pulumi:"mfa,optional"`
-    // SMS authentication/verification message template.
-    MfaMessage *string `pulumi:"mfaMessage,optional"`
-
-    // Account recovery setting strategy. Example: PHONE_WITHOUT_MFA_AND_EMAIL
-    AccountRecovery *string `pulumi:"accountRecovery,optional"`
-
-    // Auto-verify claims.
-    AutoVerify *AutoVerify `pulumi:"autoVerify,optional"`
-
-    // Advanced security mode (OFF | AUDIT | ENFORCED). Default ENFORCED.
-    AdvancedSecurityMode *string `pulumi:"advancedSecurityMode,optional"`
-
-    // Invitation and verification templates.
-    UserInvitation   *InviteTemplate       `pulumi:"userInvitation,optional"`
-    UserVerification *VerificationTemplate `pulumi:"userVerification,optional"`
-
-    // Custom attributes to add to the pool schema; booleans indicate inclusion.
-    CustomAttributes *CustomAttributes `pulumi:"customAttributes,optional"`
-
-    // User pool domain configuration (custom for non-ephemeral; hosted for ephemeral).
-    Domain *DomainConfig `pulumi:"domain,optional"`
-
-    // Map of trigger name -> config. Names: createAuthChallenge, defineAuthChallenge, verifyAuthChallengeResponse,
-    // postAuthentication, preSignUp, userMigration, preTokenGeneration.
-    Triggers map[string]TriggerConfig `pulumi:"triggers,optional"`
-
-    // Optional list of user pool client logical names to create. If empty, a single client named "default" is created.
-    Clients []string `pulumi:"clients,optional"`
+    // Allowed sign-in aliases; defaults to ["email"]. Allowed values: email, phone, preferredUsername.
+    SignInAliases []string `pulumi:"signInAliases,optional"`
 }
 
 type cognitoProvisionResult struct {
     UserPoolId  pulumi.StringOutput
     UserPoolArn pulumi.StringOutput
-    Domain      pulumi.StringPtrOutput
     ClientIds   pulumi.StringArrayOutput
     Parameters  pulumi.StringMapOutput
-}
-
-type identityPoolProvisionResult struct {
-    IdentityPoolId pulumi.StringOutput
-    AuthRoleArn    pulumi.StringOutput
-    UnauthRoleArn  pulumi.StringOutput
 }
 
 // provisionCognito provisions a Cognito User Pool (and optional Identity Pool) and configures it
@@ -445,40 +398,12 @@ func provisionCognito(
     cfg CognitoConfig,
     ephemeral bool,
     opts pulumi.ResourceOption,
-) (*cognitoProvisionResult, *identityPoolProvisionResult, error) {
-    // Defaults
-    emailAcct := "COGNITO_DEFAULT"
-    if cfg.EmailSendingAccount != nil {
-        emailAcct = *cfg.EmailSendingAccount
-    }
-    mfa := "OPTIONAL"
-    if cfg.Mfa != nil {
-        mfa = *cfg.Mfa
-    }
-    advSec := "ENFORCED"
-    if cfg.AdvancedSecurityMode != nil {
-        advSec = *cfg.AdvancedSecurityMode
-    }
-    mfaMsg := "Your one time password: {####}"
-    if cfg.MfaMessage != nil {
-        mfaMsg = *cfg.MfaMessage
-    }
-    // Construct Cognito user pool args
+) (*cognitoProvisionResult, error) {
+    // Construct minimal Cognito user pool args
     upArgs := &awscognito.UserPoolArgs{
-        Name:                     pulumi.String(fmt.Sprintf("%s-up", name)),
-        MfaConfiguration:         pulumi.String(mfa),
-        SmsAuthenticationMessage: pulumi.StringPtr(mfaMsg),
-        EmailConfiguration: &awscognito.UserPoolEmailConfigurationArgs{
-            EmailSendingAccount: pulumi.StringPtr(emailAcct),
-        },
+        Name: pulumi.String(fmt.Sprintf("%s-up", name)),
         UsernameConfiguration: &awscognito.UserPoolUsernameConfigurationArgs{
             CaseSensitive: pulumi.Bool(false),
-        },
-        UserPoolAddOns: &awscognito.UserPoolUserPoolAddOnsArgs{
-            AdvancedSecurityMode: pulumi.StringPtr(advSec),
-        },
-        AdminCreateUserConfig: &awscognito.UserPoolAdminCreateUserConfigArgs{
-            AllowAdminCreateUserOnly: pulumi.Bool(true),
         },
         DeletionProtection: pulumi.String(func() string {
             if ephemeral {
@@ -487,220 +412,33 @@ func provisionCognito(
             return "ACTIVE"
         }()),
     }
-    // Sign-in aliases -> AliasAttributes
+    // Map sign-in aliases (default to email when none provided)
+    aliases := cfg.SignInAliases
+    if len(aliases) == 0 {
+        aliases = []string{"email"}
+    }
     aliasAttrs := []pulumi.StringInput{}
-    if cfg.SignInAliases != nil {
-        if cfg.SignInAliases.Email != nil && *cfg.SignInAliases.Email {
+    for _, a := range aliases {
+        switch a {
+        case "email":
             aliasAttrs = append(aliasAttrs, pulumi.String("email"))
-        }
-        if cfg.SignInAliases.Phone != nil && *cfg.SignInAliases.Phone {
+        case "phone":
             aliasAttrs = append(aliasAttrs, pulumi.String("phone_number"))
-        }
-        if cfg.SignInAliases.PreferredUsername != nil && *cfg.SignInAliases.PreferredUsername {
+        case "preferredUsername":
             aliasAttrs = append(aliasAttrs, pulumi.String("preferred_username"))
         }
-        // Username is implicit; no extra config required
     }
     if len(aliasAttrs) > 0 {
         upArgs.AliasAttributes = pulumi.StringArray(aliasAttrs)
     }
-    // Auto-verify
-    autoVerif := []pulumi.StringInput{}
-    if cfg.AutoVerify != nil {
-        if cfg.AutoVerify.Email != nil && *cfg.AutoVerify.Email {
-            autoVerif = append(autoVerif, pulumi.String("email"))
-        }
-        if cfg.AutoVerify.Phone != nil && *cfg.AutoVerify.Phone {
-            autoVerif = append(autoVerif, pulumi.String("phone_number"))
-        }
-    }
-    if len(autoVerif) > 0 {
-        upArgs.AutoVerifiedAttributes = pulumi.StringArray(autoVerif)
-    }
-    // Account recovery: map common preset to RecoveryMechanisms
-    if cfg.AccountRecovery != nil {
-        // Minimal mapping: if contains PHONE -> phone first, else email first
-        if *cfg.AccountRecovery != "" {
-            if contains(*cfg.AccountRecovery, "PHONE") {
-                upArgs.AccountRecoverySetting = &awscognito.UserPoolAccountRecoverySettingArgs{
-                    RecoveryMechanisms: awscognito.UserPoolAccountRecoverySettingRecoveryMechanismArray{
-                        &awscognito.UserPoolAccountRecoverySettingRecoveryMechanismArgs{ Name: pulumi.String("verified_phone_number"), Priority: pulumi.Int(1) },
-                        &awscognito.UserPoolAccountRecoverySettingRecoveryMechanismArgs{ Name: pulumi.String("verified_email"), Priority: pulumi.Int(2) },
-                    },
-                }
-            } else {
-                upArgs.AccountRecoverySetting = &awscognito.UserPoolAccountRecoverySettingArgs{
-                    RecoveryMechanisms: awscognito.UserPoolAccountRecoverySettingRecoveryMechanismArray{
-                        &awscognito.UserPoolAccountRecoverySettingRecoveryMechanismArgs{ Name: pulumi.String("verified_email"), Priority: pulumi.Int(1) },
-                        &awscognito.UserPoolAccountRecoverySettingRecoveryMechanismArgs{ Name: pulumi.String("verified_phone_number"), Priority: pulumi.Int(2) },
-                    },
-                }
-            }
-        }
-    }
-    // Custom attributes
-    schema := awscognito.UserPoolSchemaArray{}
-    if cfg.CustomAttributes != nil {
-        // string attributes
-        if cfg.CustomAttributes.GlobalRoles != nil && *cfg.CustomAttributes.GlobalRoles {
-            schema = append(schema, &awscognito.UserPoolSchemaArgs{ Name: pulumi.String("globalRoles"), AttributeDataType: pulumi.String("String"), Mutable: pulumi.BoolPtr(true) })
-        }
-        if cfg.CustomAttributes.TenantId != nil && *cfg.CustomAttributes.TenantId {
-            schema = append(schema, &awscognito.UserPoolSchemaArgs{ Name: pulumi.String("tenantId"), AttributeDataType: pulumi.String("String"), Mutable: pulumi.BoolPtr(false) })
-        }
-        if cfg.CustomAttributes.TenantName != nil && *cfg.CustomAttributes.TenantName {
-            schema = append(schema, &awscognito.UserPoolSchemaArgs{ Name: pulumi.String("tenantName"), AttributeDataType: pulumi.String("String"), Mutable: pulumi.BoolPtr(true) })
-        }
-        if cfg.CustomAttributes.UserId != nil && *cfg.CustomAttributes.UserId {
-            schema = append(schema, &awscognito.UserPoolSchemaArgs{ Name: pulumi.String("userId"), AttributeDataType: pulumi.String("String"), Mutable: pulumi.BoolPtr(false) })
-        }
-    }
-    if len(schema) > 0 {
-        upArgs.Schemas = schema
-    }
-    // Verification template
-    if cfg.UserVerification != nil {
-        tmpl := &awscognito.UserPoolVerificationMessageTemplateArgs{
-            DefaultEmailOption: pulumi.StringPtr("CONFIRM_WITH_CODE"),
-        }
-        if cfg.UserVerification.EmailBody != nil {
-            tmpl.EmailMessage = pulumi.StringPtr(*cfg.UserVerification.EmailBody)
-        }
-        if cfg.UserVerification.EmailSubject != nil {
-            tmpl.EmailSubject = pulumi.StringPtr(*cfg.UserVerification.EmailSubject)
-        }
-        if cfg.UserVerification.SmsMessage != nil {
-            tmpl.SmsMessage = pulumi.StringPtr(*cfg.UserVerification.SmsMessage)
-        }
-        upArgs.VerificationMessageTemplate = tmpl
-    }
-    // Invitation template
-    if cfg.UserInvitation != nil {
-        upArgs.AdminCreateUserConfig = &awscognito.UserPoolAdminCreateUserConfigArgs{
-            AllowAdminCreateUserOnly: pulumi.Bool(true),
-            InviteMessageTemplate:    &awscognito.UserPoolAdminCreateUserConfigInviteMessageTemplateArgs{},
-        }
-        if cfg.UserInvitation.EmailBody != nil {
-            upArgs.AdminCreateUserConfig.InviteMessageTemplate.EmailMessage = pulumi.StringPtr(*cfg.UserInvitation.EmailBody)
-        }
-        if cfg.UserInvitation.EmailSubject != nil {
-            upArgs.AdminCreateUserConfig.InviteMessageTemplate.EmailSubject = pulumi.StringPtr(*cfg.UserInvitation.EmailSubject)
-        }
-        if cfg.UserInvitation.SmsMessage != nil {
-            upArgs.AdminCreateUserConfig.InviteMessageTemplate.SmsMessage = pulumi.StringPtr(*cfg.UserInvitation.SmsMessage)
-        }
-    }
-
-    // Optional SMS configuration role (for MFA via SMS). Create only when MFA not OFF.
-    if mfa != "OFF" {
-        smsRole, extId, err := ensureSmsRole(ctx, name, opts)
-        if err != nil {
-            return nil, nil, err
-        }
-        if smsRole != nil && extId != "" {
-            upArgs.SmsConfiguration = &awscognito.UserPoolSmsConfigurationArgs{
-                SnsCallerArn: smsRole.Arn,
-                ExternalId:   pulumi.String(extId),
-            }
-        }
-    }
-
-    // Triggers (optional): create lightweight lambda per enabled trigger and wire LambdaConfig
-    triggerFns := map[string]*awslambda.Function{}
-    if len(cfg.Triggers) > 0 {
-        lambdaConfig := &awscognito.UserPoolLambdaConfigArgs{}
-        if cfg.Triggers != nil {
-            for trigName, trig := range cfg.Triggers {
-                if trig.Enabled != nil && !*trig.Enabled {
-                    continue
-                }
-                fn, err := newCognitoTriggerLambda(ctx, fmt.Sprintf("%s-%s", name, trigName), trig, opts)
-                if err != nil {
-                    return nil, nil, err
-                }
-                triggerFns[trigName] = fn
-                switch trigName {
-                case "createAuthChallenge":
-                    lambdaConfig.CreateAuthChallenge = fn.Arn
-                case "defineAuthChallenge":
-                    lambdaConfig.DefineAuthChallenge = fn.Arn
-                case "verifyAuthChallengeResponse":
-                    lambdaConfig.VerifyAuthChallengeResponse = fn.Arn
-                case "postAuthentication":
-                    lambdaConfig.PostAuthentication = fn.Arn
-                case "preSignUp":
-                    lambdaConfig.PreSignUp = fn.Arn
-                case "userMigration":
-                    lambdaConfig.UserMigration = fn.Arn
-                case "preTokenGeneration":
-                    lambdaConfig.PreTokenGeneration = fn.Arn
-                }
-            }
-        }
-        upArgs.LambdaConfig = lambdaConfig
-    }
 
     userPool, err := awscognito.NewUserPool(ctx, fmt.Sprintf("%s-userpool", name), upArgs, opts)
     if err != nil {
-        return nil, nil, err
-    }
-    // Grant Cognito permission to invoke trigger lambdas
-    for trigName, fn := range triggerFns {
-        _, err := awslambda.NewPermission(ctx, fmt.Sprintf("%s-%s-invoke", name, trigName), &awslambda.PermissionArgs{
-            Action:    pulumi.String("lambda:InvokeFunction"),
-            Function:  fn.Name,
-            Principal: pulumi.String("cognito-idp.amazonaws.com"),
-            SourceArn: userPool.Arn,
-        }, opts)
-        if err != nil {
-            return nil, nil, err
-        }
-    }
-
-    // Domain
-    var domainOut pulumi.StringOutput
-    if cfg.Domain != nil {
-        // Determine region and stack for hosted domain composition
-        region, _ := aws.GetRegion(ctx, &aws.GetRegionArgs{}, nil)
-        if !ephemeral {
-            if cfg.Domain.DomainName == nil || cfg.Domain.CertificateArn == nil {
-                return nil, nil, fmt.Errorf("cognito.domain.domainName and certificateArn are required when isEphemeral=false")
-            }
-            d, err := awscognito.NewUserPoolDomain(ctx, fmt.Sprintf("%s-domain", name), &awscognito.UserPoolDomainArgs{
-                Domain:        pulumi.String(*cfg.Domain.DomainName),
-                UserPoolId:    userPool.ID(),
-                CertificateArn: pulumi.StringPtr(*cfg.Domain.CertificateArn),
-            }, opts)
-            if err != nil {
-                return nil, nil, err
-            }
-            domainOut = d.Domain
-        } else {
-            prefix := fmt.Sprintf("%s-%s-tenant", ctx.Stack(), name)
-            // sanitize to match Cognito hosted domain requirements
-            prefix = strings.ToLower(prefix)
-            re := regexp.MustCompile(`[^a-z0-9-]`)
-            prefix = re.ReplaceAllString(prefix, "-")
-            if len(prefix) > 63 {
-                prefix = prefix[:63]
-            }
-            d, err := awscognito.NewUserPoolDomain(ctx, fmt.Sprintf("%s-domain", name), &awscognito.UserPoolDomainArgs{
-                Domain:     pulumi.String(prefix),
-                UserPoolId: userPool.ID(),
-            }, opts)
-            if err != nil {
-                return nil, nil, err
-            }
-            // Compose full hosted domain
-            domainOut = d.Domain.ApplyT(func(p string) (string, error) { return fmt.Sprintf("%s.auth.%s.amazoncognito.com", p, region.Name), nil }).(pulumi.StringOutput)
-        }
+        return nil, err
     }
 
     // Create one or more user pool clients (at least one is required to bind as VP identity source)
-    clientNames := cfg.Clients
-    if len(clientNames) == 0 {
-        clientNames = []string{"default"}
-    }
+    clientNames := []string{"default"}
     clientIds := []pulumi.StringInput{}
     for _, cn := range clientNames {
         c, err := awscognito.NewUserPoolClient(ctx, fmt.Sprintf("%s-%s-client", name, cn), &awscognito.UserPoolClientArgs{
@@ -711,7 +449,7 @@ func provisionCognito(
             GenerateSecret:             pulumi.BoolPtr(false),
         }, opts)
         if err != nil {
-            return nil, nil, err
+            return nil, err
         }
         clientIds = append(clientIds, c.ID())
     }
@@ -727,16 +465,7 @@ func provisionCognito(
         },
     }, opts)
     if err != nil {
-        return nil, nil, err
-    }
-
-    // Optional: Identity Pool + roles
-    var idpOutputs *identityPoolProvisionResult
-    if cfg.IdentityPoolFederation != nil && *cfg.IdentityPoolFederation {
-        idpOutputs, err = provisionIdentityPool(ctx, name, userPool, clientIds, opts)
-        if err != nil {
-            return nil, nil, err
-        }
+        return nil, err
     }
 
     // Collect outputs (typed)
@@ -746,244 +475,8 @@ func provisionCognito(
         ClientIds:   pulumi.ToStringArrayOutput(pulumi.StringArray(clientIds)),
         Parameters:  (pulumi.StringMap{"USER_POOL_ID": userPool.ID().ToStringOutput()}).ToStringMapOutput(),
     }
-    if domainOut != (pulumi.StringOutput{}) {
-        res.Domain = domainOut.ToStringPtrOutput()
-    }
-
-    return res, idpOutputs, nil
+    return res, nil
 }
-
-// ensureSmsRole creates an IAM role usable by Cognito to publish SMS via SNS.
-func ensureSmsRole(ctx *pulumi.Context, name string, opts pulumi.ResourceOption) (*awsiam.Role, string, error) {
-    extId := fmt.Sprintf("%s-sms-%s", name, ctx.Stack())
-    role, err := awsiam.NewRole(ctx, fmt.Sprintf("%s-sms-role", name), &awsiam.RoleArgs{
-        AssumeRolePolicy: awsiam.GetPolicyDocumentOutput(ctx, awsiam.GetPolicyDocumentOutputArgs{
-            Statements: awsiam.GetPolicyDocumentStatementArray{
-                awsiam.GetPolicyDocumentStatementArgs{
-                    Actions: pulumi.StringArray{pulumi.String("sts:AssumeRole")},
-                    Principals: awsiam.GetPolicyDocumentStatementPrincipalArray{
-                        awsiam.GetPolicyDocumentStatementPrincipalArgs{
-                            Type:        pulumi.String("Service"),
-                            Identifiers: pulumi.StringArray{pulumi.String("cognito-idp.amazonaws.com")},
-                        },
-                    },
-                    Conditions: awsiam.GetPolicyDocumentStatementConditionArray{
-                        awsiam.GetPolicyDocumentStatementConditionArgs{
-                            Test:     pulumi.String("StringEquals"),
-                            Variable: pulumi.String("sts:ExternalId"),
-                            Values:   pulumi.StringArray{pulumi.String(extId)},
-                        },
-                    },
-                },
-            },
-        }).Json(),
-        Description: pulumi.StringPtr("Cognito SMS publishing role"),
-    }, opts)
-    if err != nil {
-        return nil, "", err
-    }
-    // Allow publishing SMS via SNS
-    _, err = awsiam.NewRolePolicy(ctx, fmt.Sprintf("%s-sms-pol", name), &awsiam.RolePolicyArgs{
-        Role: role.Name,
-        Policy: pulumi.String(`{
-  "Version": "2012-10-17",
-  "Statement": [
-    { "Effect": "Allow", "Action": ["sns:Publish"], "Resource": "*" }
-  ]
-}`),
-    }, opts)
-    if err != nil {
-        return nil, "", err
-    }
-    return role, extId, nil
-}
-
-// newCognitoTriggerLambda creates a minimal Node.js22.x Lambda for a Cognito trigger and applies custom permissions.
-func newCognitoTriggerLambda(ctx *pulumi.Context, name string, cfg TriggerConfig, opts pulumi.ResourceOption) (*awslambda.Function, error) {
-    // IAM role per trigger
-    role, err := awsiam.NewRole(ctx, fmt.Sprintf("%s-role", name), &awsiam.RoleArgs{
-        AssumeRolePolicy: awsiam.GetPolicyDocumentOutput(ctx, awsiam.GetPolicyDocumentOutputArgs{
-            Statements: awsiam.GetPolicyDocumentStatementArray{
-                awsiam.GetPolicyDocumentStatementArgs{
-                    Actions: pulumi.StringArray{pulumi.String("sts:AssumeRole")},
-                    Principals: awsiam.GetPolicyDocumentStatementPrincipalArray{
-                        awsiam.GetPolicyDocumentStatementPrincipalArgs{
-                            Type:        pulumi.String("Service"),
-                            Identifiers: pulumi.StringArray{pulumi.String("lambda.amazonaws.com")},
-                        },
-                    },
-                },
-            },
-        }).Json(),
-        Description: pulumi.StringPtr("Role for Cognito lifecycle trigger"),
-    }, opts)
-    if err != nil {
-        return nil, err
-    }
-    // Basic logs
-    _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-logs", name), &awsiam.RolePolicyAttachmentArgs{
-        Role:      role.Name,
-        PolicyArn: pulumi.String(awsiam.ManagedPolicyAWSLambdaBasicExecutionRole),
-    }, opts)
-    if err != nil {
-        return nil, err
-    }
-    // Custom permissions (coarse-grained; user provided actions, resource *)
-    if len(cfg.Permissions) > 0 {
-        polDoc := "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [{ \"Effect\": \"Allow\", \"Action\": ["
-        for i, a := range cfg.Permissions {
-            if i > 0 {
-                polDoc += ","
-            }
-            polDoc += fmt.Sprintf("\"%s\"", a)
-        }
-        polDoc += "], \"Resource\": \"*\" }]\n}"
-        _, err = awsiam.NewRolePolicy(ctx, fmt.Sprintf("%s-extra", name), &awsiam.RolePolicyArgs{
-            Role:   role.Name,
-            Policy: pulumi.String(polDoc),
-        }, opts)
-        if err != nil {
-            return nil, err
-        }
-    }
-    // Lambda code: embedded minimal stub that echoes/permits success for common triggers
-    code := pulumi.NewAssetArchive(map[string]pulumi.AssetOrArchive{
-        "index.mjs": pulumi.NewStringAsset(cognitoTriggerStub),
-    })
-    handler := "index.handler" // ignore cfg.Handler until external code assets are supported
-    fn, err := awslambda.NewFunction(ctx, fmt.Sprintf("%s-fn", name), &awslambda.FunctionArgs{
-        Role:         role.Arn,
-        Runtime:      pulumi.String("nodejs22.x"),
-        Handler:      pulumi.String(handler),
-        Code:         code,
-        Environment:  &awslambda.FunctionEnvironmentArgs{ Variables: stringMap(cfg.Environment) },
-        Architectures: pulumi.StringArray{pulumi.String("arm64")},
-        Timeout:      pulumi.Int(10),
-    }, opts)
-    if err != nil {
-        return nil, err
-    }
-    // Log group for trigger
-    _, _ = awscloudwatch.NewLogGroup(ctx, fmt.Sprintf("%s-lg", name), &awscloudwatch.LogGroupArgs{
-        Name: fn.Name.ApplyT(func(n string) (string, error) { return "/aws/lambda/" + n, nil }).(pulumi.StringOutput),
-        RetentionInDays: pulumi.IntPtr(14),
-    }, opts)
-    return fn, nil
-}
-
-func stringMap(m map[string]string) pulumi.StringMapInput {
-    out := pulumi.StringMap{}
-    for k, v := range m {
-        out[k] = pulumi.String(v)
-    }
-    return out
-}
-
-// provisionIdentityPool creates a Cognito Identity Pool with default authenticated/unauthenticated roles.
-func provisionIdentityPool(
-    ctx *pulumi.Context,
-    name string,
-    userPool *awscognito.UserPool,
-    clientIds []pulumi.StringInput,
-    opts pulumi.ResourceOption,
-) (*identityPoolProvisionResult, error) {
-    region, _ := aws.GetRegion(ctx, &aws.GetRegionArgs{}, nil)
-    // Build provider name of user pool for identity pool mapping
-    providerName := pulumi.Sprintf("cognito-idp.%s.amazonaws.com/%s", region.Name, userPool.ID())
-    ip, err := awscognito.NewIdentityPool(ctx, fmt.Sprintf("%s-idp", name), &awscognito.IdentityPoolArgs{
-        IdentityPoolName:               pulumi.String(fmt.Sprintf("%s-identity-pool", name)),
-        AllowUnauthenticatedIdentities: pulumi.Bool(false),
-        CognitoIdentityProviders: awscognito.IdentityPoolCognitoIdentityProviderArray{
-            &awscognito.IdentityPoolCognitoIdentityProviderArgs{
-                ClientId:     pulumi.ToOutput(clientIds[0]).(pulumi.StringOutput).ToStringPtrOutput(),
-                ProviderName: providerName,
-            },
-        },
-    }, opts)
-    if err != nil {
-        return nil, err
-    }
-
-    // Authenticated role
-    authRole, err := awsiam.NewRole(ctx, fmt.Sprintf("%s-auth-role", name), &awsiam.RoleArgs{
-        AssumeRolePolicy: awsiam.GetPolicyDocumentOutput(ctx, awsiam.GetPolicyDocumentOutputArgs{
-            Statements: awsiam.GetPolicyDocumentStatementArray{
-                awsiam.GetPolicyDocumentStatementArgs{
-                    Actions: pulumi.StringArray{pulumi.String("sts:AssumeRole")},
-                    Principals: awsiam.GetPolicyDocumentStatementPrincipalArray{
-                        awsiam.GetPolicyDocumentStatementPrincipalArgs{
-                            Type:        pulumi.String("Federated"),
-                            Identifiers: pulumi.StringArray{pulumi.String("cognito-identity.amazonaws.com")},
-                        },
-                    },
-                    Conditions: awsiam.GetPolicyDocumentStatementConditionArray{
-                        awsiam.GetPolicyDocumentStatementConditionArgs{
-                            Test:     pulumi.String("StringEquals"),
-                            Variable: pulumi.String("cognito-identity.amazonaws.com:aud"),
-                            Values:   pulumi.StringArray{ip.ID().ToStringOutput()},
-                        },
-                        awsiam.GetPolicyDocumentStatementConditionArgs{
-                            Test:     pulumi.String("ForAnyValue:StringLike"),
-                            Variable: pulumi.String("cognito-identity.amazonaws.com:amr"),
-                            Values:   pulumi.StringArray{pulumi.String("authenticated")},
-                        },
-                    },
-                },
-            },
-        }).Json(),
-    }, opts)
-    if err != nil {
-        return nil, err
-    }
-    // Unauthenticated role
-    unauthRole, err := awsiam.NewRole(ctx, fmt.Sprintf("%s-unauth-role", name), &awsiam.RoleArgs{
-        AssumeRolePolicy: awsiam.GetPolicyDocumentOutput(ctx, awsiam.GetPolicyDocumentOutputArgs{
-            Statements: awsiam.GetPolicyDocumentStatementArray{
-                awsiam.GetPolicyDocumentStatementArgs{
-                    Actions: pulumi.StringArray{pulumi.String("sts:AssumeRole")},
-                    Principals: awsiam.GetPolicyDocumentStatementPrincipalArray{
-                        awsiam.GetPolicyDocumentStatementPrincipalArgs{
-                            Type:        pulumi.String("Federated"),
-                            Identifiers: pulumi.StringArray{pulumi.String("cognito-identity.amazonaws.com")},
-                        },
-                    },
-                    Conditions: awsiam.GetPolicyDocumentStatementConditionArray{
-                        awsiam.GetPolicyDocumentStatementConditionArgs{
-                            Test:     pulumi.String("StringEquals"),
-                            Variable: pulumi.String("cognito-identity.amazonaws.com:aud"),
-                            Values:   pulumi.StringArray{ip.ID().ToStringOutput()},
-                        },
-                        awsiam.GetPolicyDocumentStatementConditionArgs{
-                            Test:     pulumi.String("ForAnyValue:StringLike"),
-                            Variable: pulumi.String("cognito-identity.amazonaws.com:amr"),
-                            Values:   pulumi.StringArray{pulumi.String("unauthenticated")},
-                        },
-                    },
-                },
-            },
-        }).Json(),
-    }, opts)
-    if err != nil {
-        return nil, err
-    }
-
-    // Attach roles to identity pool
-    _, err = awscognito.NewIdentityPoolRoleAttachment(ctx, fmt.Sprintf("%s-roles", name), &awscognito.IdentityPoolRoleAttachmentArgs{
-        IdentityPoolId: ip.ID(),
-        Roles: pulumi.StringMap{
-            "authenticated":   authRole.Arn,
-            "unauthenticated": unauthRole.Arn,
-        },
-    }, opts)
-    if err != nil {
-        return nil, err
-    }
-
-    return &identityPoolProvisionResult{
-        IdentityPoolId: ip.ID().ToStringOutput(),
-        AuthRoleArn:    authRole.Arn,
-        UnauthRoleArn:  unauthRole.Arn,
-    }, nil
-}
-
-func contains(s, substr string) bool { return strings.Contains(s, substr) }
+// Note: Identity Pools, lifecycle triggers, templates, and other advanced Cognito
+// options were intentionally removed from the public configuration surface. The
+// provider creates a minimal User Pool + client and binds it as the VP identity source.

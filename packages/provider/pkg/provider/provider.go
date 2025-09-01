@@ -2,7 +2,9 @@ package provider
 
 import (
     "embed"
+    "encoding/json"
     "fmt"
+    "net/mail"
 
     aws "github.com/pulumi/pulumi-aws/sdk/v6/go/aws"
     awscognito "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cognito"
@@ -10,6 +12,7 @@ import (
     awsdynamodb "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/dynamodb"
     awsiam "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
     awslambda "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lambda"
+    awssesv2 "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/sesv2"
     awsvp "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/verifiedpermissions"
     p "github.com/pulumi/pulumi-go-provider"
     "github.com/pulumi/pulumi-go-provider/infer"
@@ -37,7 +40,7 @@ type AuthorizerArgs struct {
     Description *string `pulumi:"description,optional"`
     // When true, resources are retained on delete and protected from deletion (where supported).
     RetainOnDelete *bool `pulumi:"retainOnDelete,optional"`
-    // DynamoDB-related options for the provider-managed tenant table.
+    // DynamoDB-related options for the provider-managed auth table.
     Dynamo *DynamoConfig `pulumi:"dynamo,optional"`
     // Settings for the bundled Lambda authorizer
     Lambda *LambdaConfig `pulumi:"lambda,optional"`
@@ -55,7 +58,7 @@ type LambdaConfig struct {
 
 // DynamoConfig groups DynamoDB table-related provider options.
 type DynamoConfig struct {
-    // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
+    // If true, enable DynamoDB Streams on the auth table (NEW_AND_OLD_IMAGES).
     EnableDynamoDbStream *bool `pulumi:"enableDynamoDbStream,optional"`
 }
 
@@ -64,23 +67,34 @@ type DynamoConfig struct {
 type AuthorizerWithPolicyStore struct {
     pulumi.ResourceState
 
+    // Top-level outputs
     PolicyStoreId  pulumi.StringOutput `pulumi:"policyStoreId"`
     PolicyStoreArn pulumi.StringOutput `pulumi:"policyStoreArn"`
-    AuthorizerFunctionArn pulumi.StringOutput `pulumi:"authorizerFunctionArn"`
-    RoleArn        pulumi.StringOutput `pulumi:"roleArn"`
-    // DynamoDB table outputs (exported with PascalCase to match schema/docs)
-    TenantTableArn       pulumi.StringOutput    `pulumi:"TenantTableArn"`
-    TenantTableStreamArn pulumi.StringPtrOutput `pulumi:"TenantTableStreamArn,optional"`
+    Parameters     pulumi.StringMapOutput `pulumi:"parameters,optional"`
 
-    // Optional Cognito-related outputs
-    UserPoolId        pulumi.StringPtrOutput   `pulumi:"userPoolId,optional"`
+    // Grouped outputs
+    Cognito *CognitoOutputs `pulumi:"cognito,optional"`
+    Dynamo  DynamoOutputs  `pulumi:"dynamo"`
+    Lambda  LambdaOutputs  `pulumi:"lambda"`
+}
+
+// CognitoOutputs groups optional Cognito-related outputs under the `cognito` object.
+type CognitoOutputs struct {
     UserPoolArn       pulumi.StringPtrOutput   `pulumi:"userPoolArn,optional"`
-    UserPoolDomain    pulumi.StringPtrOutput   `pulumi:"userPoolDomain,optional"`
-    IdentityPoolId    pulumi.StringPtrOutput   `pulumi:"identityPoolId,optional"`
-    AuthRoleArn       pulumi.StringPtrOutput   `pulumi:"authRoleArn,optional"`
-    UnauthRoleArn     pulumi.StringPtrOutput   `pulumi:"unauthRoleArn,optional"`
     UserPoolClientIds pulumi.StringArrayOutput `pulumi:"userPoolClientIds,optional"`
-    Parameters        pulumi.StringMapOutput   `pulumi:"parameters,optional"`
+    UserPoolId        pulumi.StringPtrOutput   `pulumi:"userPoolId,optional"`
+}
+
+// DynamoOutputs groups DynamoDB auth table outputs under the `dynamo` object.
+type DynamoOutputs struct {
+    AuthTableArn       pulumi.StringOutput    `pulumi:"AuthTableArn"`
+    AuthTableStreamArn pulumi.StringPtrOutput `pulumi:"AuthTableStreamArn,optional"`
+}
+
+// LambdaOutputs groups Lambda authorizer outputs under the `lambda` object.
+type LambdaOutputs struct {
+    AuthorizerFunctionArn pulumi.StringOutput `pulumi:"authorizerFunctionArn"`
+    RoleArn               pulumi.StringOutput `pulumi:"roleArn"`
 }
 
 func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
@@ -130,7 +144,7 @@ func NewAuthorizerWithPolicyStore(
         return nil, err
     }
 
-    // 1b) DynamoDB single-table for tenants/users/roles
+    // 1b) DynamoDB single-table for auth/identity/roles data
     // Always parent to the component; retain on delete only when retention is enabled
     tableOpt := retOpts
 
@@ -360,11 +374,12 @@ func NewAuthorizerWithPolicyStore(
     // Wire base outputs
     comp.PolicyStoreId = store.ID().ToStringOutput()
     comp.PolicyStoreArn = store.Arn
-    comp.AuthorizerFunctionArn = fn.Arn
-    comp.RoleArn = role.Arn
-    comp.TenantTableArn = table.Arn
-    // StreamArn is only non-nil when streams are enabled on the table
-    comp.TenantTableStreamArn = table.StreamArn
+    // Grouped output assignments
+    comp.Lambda.AuthorizerFunctionArn = fn.Arn
+    comp.Lambda.RoleArn = role.Arn
+    // Dynamo: StreamArn is only non-nil when streams are enabled on the table
+    comp.Dynamo.AuthTableArn = table.Arn
+    comp.Dynamo.AuthTableStreamArn = table.StreamArn
 
     // 5) Optional Cognito provisioning + Verified Permissions identity source
     if args.Cognito != nil {
@@ -372,9 +387,11 @@ func NewAuthorizerWithPolicyStore(
         if err != nil {
             return nil, err
         }
-        comp.UserPoolId = cog.UserPoolId.ToStringPtrOutput()
-        comp.UserPoolArn = cog.UserPoolArn.ToStringPtrOutput()
-        comp.UserPoolClientIds = cog.ClientIds
+        comp.Cognito = &CognitoOutputs{
+            UserPoolId:        cog.UserPoolId.ToStringPtrOutput(),
+            UserPoolArn:       cog.UserPoolArn.ToStringPtrOutput(),
+            UserPoolClientIds: cog.ClientIds,
+        }
         comp.Parameters = cog.Parameters
     }
 
@@ -394,6 +411,8 @@ func withRetention(opts pulumi.ResourceOption, retain bool) pulumi.ResourceOptio
 type CognitoConfig struct {
     // Allowed sign-in aliases; defaults to ["email"]. Allowed values: email, phone, preferredUsername.
     SignInAliases []string `pulumi:"signInAliases,optional"`
+    // Optional Amazon SES configuration for Cognito User Pool email sending.
+    SesConfig *CognitoSesConfig `pulumi:"sesConfig,optional"`
 }
 
 type cognitoProvisionResult struct {
@@ -446,9 +465,116 @@ func provisionCognito(
         upArgs.AliasAttributes = pulumi.StringArray(aliasAttrs)
     }
 
+    // Optional: SES-backed email sending
+    var (
+        regionName      string
+        sesIdentityName string
+        sesCallerAcct   string
+        fromEmail       string
+        sesIdentityRegion string
+    )
+    if cfg.SesConfig != nil {
+        // Look up current AWS region and caller (for validation + policy construction)
+        region, err := aws.GetRegion(ctx, nil)
+        if err != nil {
+            return nil, fmt.Errorf("failed to get AWS region: %w", err)
+        }
+        regionName = region.Name
+
+        caller, err := aws.GetCallerIdentity(ctx, nil)
+        if err != nil {
+            return nil, fmt.Errorf("failed to get AWS caller identity: %w", err)
+        }
+        sesCallerAcct = caller.AccountId
+
+        // Validate config + extract SES identity account/name/region
+        acc, ident, identRegion, err := validateSesConfig(*cfg.SesConfig, regionName)
+        if err != nil {
+            return nil, err
+        }
+        sesIdentityName = ident
+        sesIdentityRegion = identRegion
+        if acc != sesCallerAcct {
+            return nil, fmt.Errorf("cognito.sesConfig.sourceArn account (%s) must match the current AWS account (%s); cross-account identities are not supported", acc, sesCallerAcct)
+        }
+        if addr, err := mail.ParseAddress(cfg.SesConfig.From); err == nil && addr.Address != "" {
+            fromEmail = addr.Address
+        } else {
+            fromEmail = cfg.SesConfig.From
+        }
+
+        // Create a region-scoped AWS provider for SES (when identity region differs)
+        _ = identRegion // currently unused outside resource option; keep for clarity
+
+        // Configure the user pool to use SES (DEVELOPER) with provided values
+        upArgs.EmailConfiguration = &awscognito.UserPoolEmailConfigurationArgs{
+            EmailSendingAccount: pulumi.String("DEVELOPER"),
+            SourceArn:           pulumi.StringPtr(cfg.SesConfig.SourceArn),
+            From:                pulumi.StringPtr(cfg.SesConfig.From),
+        }
+        if cfg.SesConfig.ReplyToEmail != nil && *cfg.SesConfig.ReplyToEmail != "" {
+            upArgs.EmailConfiguration.ReplyToEmailAddress = pulumi.StringPtr(*cfg.SesConfig.ReplyToEmail)
+        }
+        if cfg.SesConfig.ConfigurationSet != nil && *cfg.SesConfig.ConfigurationSet != "" {
+            upArgs.EmailConfiguration.ConfigurationSet = pulumi.StringPtr(*cfg.SesConfig.ConfigurationSet)
+        }
+    }
+
     userPool, err := awscognito.NewUserPool(ctx, fmt.Sprintf("%s-userpool", name), upArgs, opts)
     if err != nil {
         return nil, err
+    }
+
+    // If SES config was provided, attach the SES identity policy now that we have a pool ID
+    if cfg.SesConfig != nil {
+        // Build policy JSON using user pool ID -> ARN with proper JSON escaping
+        policy := userPool.ID().ApplyT(func(id string) (string, error) {
+            upArn := fmt.Sprintf("arn:%s:cognito-idp:%s:%s:userpool/%s", partitionForRegion(regionName), regionName, sesCallerAcct, id)
+            principalService := "cognito-idp.amazonaws.com"
+            if partitionForRegion(regionName) == "aws-cn" {
+                principalService = "cognito-idp.amazonaws.com.cn"
+            }
+            cond := map[string]any{
+                "aws:SourceAccount": sesCallerAcct,
+                "aws:SourceArn":     upArn,
+            }
+            if fromEmail != "" {
+                cond["ses:FromAddress"] = fromEmail
+            }
+            doc := map[string]any{
+                "Version": "2012-10-17",
+                "Statement": []any{
+                    map[string]any{
+                        "Sid":      "AllowCognitoUserPool",
+                        "Effect":   "Allow",
+                        "Resource": cfg.SesConfig.SourceArn,
+                        "Principal": map[string]any{"Service": []string{principalService}},
+                        "Action":   []string{"ses:SendEmail", "ses:SendRawEmail"},
+                        "Condition": map[string]any{
+                            "StringEquals": cond,
+                        },
+                    },
+                },
+            }
+            b, err := json.Marshal(doc)
+            if err != nil {
+                return "", err
+            }
+            return string(b), nil
+        }).(pulumi.StringOutput)
+
+        // Create a region-scoped AWS provider for SES in the identity's region
+        sesProv, err := aws.NewProvider(ctx, fmt.Sprintf("%s-ses-%s", name, sesIdentityRegion), &aws.ProviderArgs{Region: pulumi.String(sesIdentityRegion)})
+        if err != nil {
+            return nil, err
+        }
+        if _, err := awssesv2.NewEmailIdentityPolicy(ctx, fmt.Sprintf("%s-ses-identity-policy", name), &awssesv2.EmailIdentityPolicyArgs{
+            EmailIdentity: pulumi.String(sesIdentityName),
+            PolicyName:    pulumi.String(fmt.Sprintf("%s-cognito", name)),
+            Policy:        policy,
+        }, pulumi.Merge(withRetention(opts, retainOnDelete), pulumi.Provider(sesProv))); err != nil {
+            return nil, err
+        }
     }
 
     // Create one or more user pool clients (at least one is required to bind as VP identity source)
@@ -494,3 +620,4 @@ func provisionCognito(
 // Note: Identity Pools, lifecycle triggers, templates, and other advanced Cognito
 // options were intentionally removed from the public configuration surface. The
 // provider creates a minimal User Pool + client and binds it as the VP identity source.
+

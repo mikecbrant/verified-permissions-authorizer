@@ -17,10 +17,58 @@
     "verified-permissions-authorizer:index:AuthorizerWithPolicyStore": {
       "isComponent": true,
       "inputProperties": {
+        "cognito": {
+          "type": "object",
+          "description": "Provision an AWS Cognito User Pool and configure it as the Verified Permissions identity source.",
+          "properties": {
+            "sesConfig": {
+              "type": "object",
+              "description": "Optional: configure the User Pool to send email via Amazon SES (DEVELOPER). When provided, the pool's EmailConfiguration is set accordingly and a resource policy is attached to the SES identity authorizing the Cognito service principal scoped to this User Pool.",
+              "properties": {
+                "configurationSet": {
+                  "type": "string",
+                  "description": "Optional SES configuration set name"
+                },
+                "from": {
+                  "type": "string",
+                  "description": "From address. Must match the SES email identity or be within the SES domain identity."
+                },
+                "replyToEmail": {
+                  "type": "string",
+                  "description": "Optional Reply-To address"
+                },
+                "sourceArn": {
+                  "type": "string",
+                  "description": "SES identity ARN to send from. Example: arn:aws:ses:us-east-1:123456789012:identity/example.com",
+                  "pattern": "^arn:(aws|aws-us-gov|aws-cn):ses:[a-z0-9-]+:[0-9]{12}:identity/.+$"
+                }
+              },
+              "required": ["sourceArn", "from"]
+            },
+            "signInAliases": {
+              "type": "array",
+              "description": "Allowed sign-in identifiers for the User Pool.",
+              "items": { "type": "string", "enum": ["email", "phone", "preferredUsername"] },
+              "default": ["email"]
+            }
+          }
+        },
         "description": {
           "type": "string",
           "description": "Policy store description",
           "plain": true
+        },
+        "dynamo": {
+          "type": "object",
+          "description": "DynamoDB auth table options.",
+          "properties": {
+            "enableDynamoDbStream": {
+              "type": "boolean",
+              "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the auth table",
+              "plain": true,
+              "default": false
+            }
+          }
         },
         "lambda": {
           "type": "object",
@@ -31,27 +79,15 @@
               "description": "Memory size for the Lambda function in MB.",
               "default": 128
             },
-            "reservedConcurrency": {
-              "type": "integer",
-              "description": "Reserved concurrency limit for the Lambda function.",
-              "default": 1
-            },
             "provisionedConcurrency": {
               "type": "integer",
               "description": "Provisioned concurrency units for the Lambda function (0 disables).",
               "default": 0
-            }
-          }
-        },
-        "dynamo": {
-          "type": "object",
-          "description": "DynamoDB tenant table options.",
-          "properties": {
-            "enableDynamoDbStream": {
-              "type": "boolean",
-              "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the tenant table",
-              "plain": true,
-              "default": false
+            },
+            "reservedConcurrency": {
+              "type": "integer",
+              "description": "Reserved concurrency limit for the Lambda function.",
+              "default": 1
             }
           }
         },
@@ -60,51 +96,47 @@
           "description": "When true, resources are retained on delete and protected from deletion where supported (e.g., Cognito User Pool deletion protection).",
           "plain": true,
           "default": false
-        },
-        "cognito": {
-          "type": "object",
-          "description": "Provision an AWS Cognito User Pool and configure it as the Verified Permissions identity source.",
-          "properties": {
-            "signInAliases": {
-              "type": "array",
-              "description": "Allowed sign-in identifiers for the User Pool.",
-              "items": { "type": "string", "enum": ["email", "phone", "preferredUsername"] },
-              "default": ["email"]
-            }
-          }
         }
       },
       "requiredInputs": [],
       "properties": {
-        "policyStoreId": {
-          "type": "string"
+        "cognito": {
+          "type": "object",
+          "description": "Cognito-related outputs for the provisioned identity source (when configured).",
+          "additionalProperties": false,
+          "properties": {
+            "userPoolArn": { "type": "string" },
+            "userPoolClientIds": { "type": "array", "items": { "type": "string" } },
+            "userPoolId": { "type": "string" }
+          }
         },
-        "policyStoreArn": {
-          "type": "string"
+        "dynamo": {
+          "type": "object",
+          "description": "DynamoDB auth table outputs.",
+          "additionalProperties": false,
+          "properties": {
+            "AuthTableArn": {
+              "type": "string",
+              "description": "ARN of the DynamoDB auth table"
+            },
+            "AuthTableStreamArn": {
+              "type": "string",
+              "description": "ARN of the DynamoDB auth table stream (when streams are enabled)"
+            }
+          }
         },
-        "authorizerFunctionArn": {
-          "type": "string"
+        "lambda": {
+          "type": "object",
+          "description": "Lambda authorizer outputs.",
+          "additionalProperties": false,
+          "properties": {
+            "authorizerFunctionArn": { "type": "string" },
+            "roleArn": { "type": "string" }
+          }
         },
-        "roleArn": {
-          "type": "string"
-        },
-        "TenantTableArn": {
-          "type": "string",
-          "description": "ARN of the DynamoDB tenant table"
-        },
-        "TenantTableStreamArn": {
-          "type": "string",
-          "description": "ARN of the DynamoDB tenant table stream (when streams are enabled)"
-        },
-        "userPoolId": { "type": "string" },
-        "userPoolArn": { "type": "string" },
-        "userPoolDomain": { "type": "string" },
-        "identityPoolId": { "type": "string" },
-        "authRoleArn": { "type": "string" },
-        "unauthRoleArn": { "type": "string" },
-        "userPoolClientIds": { "type": "array", "items": { "type": "string" } },
-        "parameters": { "type": "object", "additionalProperties": { "type": "string" } }
-        }
+        "parameters": { "type": "object", "additionalProperties": { "type": "string" } },
+        "policyStoreArn": { "type": "string" },
+        "policyStoreId": { "type": "string" }
       }
     }
   }

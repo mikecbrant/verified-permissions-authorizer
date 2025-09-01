@@ -60,11 +60,11 @@
         },
         "dynamo": {
           "type": "object",
-          "description": "DynamoDB tenant table options.",
+          "description": "DynamoDB auth table options.",
           "properties": {
             "enableDynamoDbStream": {
               "type": "boolean",
-              "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the tenant table",
+              "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the auth table",
               "plain": true,
               "default": false
             }
@@ -100,13 +100,23 @@
       },
       "requiredInputs": [],
       "properties": {
+        "AuthTableArn": {
+          "type": "string",
+          "description": "ARN of the DynamoDB auth table"
+        },
+        "AuthTableStreamArn": {
+          "type": "string",
+          "description": "ARN of the DynamoDB auth table stream (when streams are enabled)"
+        },
         "TenantTableArn": {
           "type": "string",
-          "description": "ARN of the DynamoDB tenant table"
+          "description": "Deprecated output alias; use AuthTableArn.",
+          "deprecationMessage": "Deprecated: use AuthTableArn"
         },
         "TenantTableStreamArn": {
           "type": "string",
-          "description": "ARN of the DynamoDB tenant table stream (when streams are enabled)"
+          "description": "Deprecated output alias; use AuthTableStreamArn.",
+          "deprecationMessage": "Deprecated: use AuthTableStreamArn"
         },
         "authRoleArn": { "type": "string" },
         "authorizerFunctionArn": { "type": "string" },

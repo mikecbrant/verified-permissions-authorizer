@@ -55,7 +55,6 @@ type AuthorizerWithPolicyStore struct {
 
     PolicyStoreId  pulumi.StringOutput `pulumi:"policyStoreId"`
     PolicyStoreArn pulumi.StringOutput `pulumi:"policyStoreArn"`
-    // Renamed per review: functionArn -> authorizerFunctionArn
     AuthorizerFunctionArn pulumi.StringOutput `pulumi:"authorizerFunctionArn"`
     RoleArn        pulumi.StringOutput `pulumi:"roleArn"`
     // DynamoDB table outputs (exported with PascalCase to match schema/docs)
@@ -103,7 +102,6 @@ func NewAuthorizerWithPolicyStore(
     // 1) Verified Permissions Policy Store
     storeArgs := &awsvp.PolicyStoreArgs{
         ValidationSettings: awsvp.PolicyStoreValidationSettingsArgs{
-            // Fixed to STRICT per review; not configurable
             Mode: pulumi.String("STRICT"),
         },
     }

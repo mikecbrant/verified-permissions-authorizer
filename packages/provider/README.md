@@ -36,7 +36,6 @@ Tight coupling to the Lambda package
 
 Schema
 - The provider schema is `packages/provider/schema.json`.
-- It is maintained alongside the Go provider; no YAML conversion step is required.
 
 Verified Permissions identity source
 - When `cognito` is supplied, an `aws.verifiedpermissions.IdentitySource` is created pointing at the provisioned User Pool and its client IDs.

@@ -12,8 +12,8 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   public readonly policyStoreArn!: pulumi.Output<string>
   public readonly authorizerFunctionArn!: pulumi.Output<string>
   public readonly roleArn!: pulumi.Output<string>
-  public readonly TenantTableArn!: pulumi.Output<string>
-  public readonly TenantTableStreamArn!: pulumi.Output<string | undefined>
+  public readonly AuthTableArn!: pulumi.Output<string>
+  public readonly AuthTableStreamArn!: pulumi.Output<string | undefined>
 
   constructor(name: string, args: AuthorizerWithPolicyStoreArgs = {}, opts?: pulumi.ComponentResourceOptions) {
     super('verified-permissions-authorizer:index:AuthorizerWithPolicyStore', name, args, opts, true)
@@ -22,8 +22,8 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
     this.policyStoreArn = get('policyStoreArn') as pulumi.Output<string>
     this.authorizerFunctionArn = get('authorizerFunctionArn') as pulumi.Output<string>
     this.roleArn = get('roleArn') as pulumi.Output<string>
-    this.TenantTableArn = get('TenantTableArn') as pulumi.Output<string>
-    this.TenantTableStreamArn = get('TenantTableStreamArn') as pulumi.Output<string | undefined>
+    this.AuthTableArn = get('AuthTableArn') as pulumi.Output<string>
+    this.AuthTableStreamArn = get('AuthTableStreamArn') as pulumi.Output<string | undefined>
   }
 }
 

@@ -33,7 +33,7 @@ type AuthorizerArgs struct {
     LambdaEnv      map[string]string `pulumi:"lambdaEnvironment,optional"`
     // If true, treat the stage as ephemeral: destroy resources on stack removal (no retention).
     IsEphemeral *bool `pulumi:"isEphemeral,optional"`
-    // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
+    // If true, enable DynamoDB Streams on the auth table (NEW_AND_OLD_IMAGES).
     EnableDynamoDbStream *bool `pulumi:"enableDynamoDbStream,optional"`
 }
 
@@ -44,12 +44,12 @@ type AuthorizerWithPolicyStore struct {
 
     PolicyStoreId  pulumi.StringOutput `pulumi:"policyStoreId"`
     PolicyStoreArn pulumi.StringOutput `pulumi:"policyStoreArn"`
-    // Renamed per review: functionArn -> authorizerFunctionArn
+    // Authorizer Lambda function ARN
     AuthorizerFunctionArn pulumi.StringOutput `pulumi:"authorizerFunctionArn"`
     RoleArn        pulumi.StringOutput `pulumi:"roleArn"`
     // DynamoDB table outputs (exported with PascalCase to match schema/docs)
-    TenantTableArn       pulumi.StringOutput    `pulumi:"TenantTableArn"`
-    TenantTableStreamArn pulumi.StringPtrOutput `pulumi:"TenantTableStreamArn,optional"`
+    AuthTableArn         pulumi.StringOutput    `pulumi:"AuthTableArn"`
+    AuthTableStreamArn   pulumi.StringPtrOutput `pulumi:"AuthTableStreamArn,optional"`
 }
 
 func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
@@ -82,7 +82,7 @@ func NewAuthorizerWithPolicyStore(
     // 1) Verified Permissions Policy Store
     storeArgs := &awsvp.PolicyStoreArgs{
         ValidationSettings: awsvp.PolicyStoreValidationSettingsArgs{
-            // Fixed to STRICT per review; not configurable
+            // Validation mode is STRICT (not configurable)
             Mode: pulumi.String("STRICT"),
         },
     }
@@ -95,7 +95,7 @@ func NewAuthorizerWithPolicyStore(
         return nil, err
     }
 
-    // 1b) DynamoDB single-table for tenants/users/roles
+    // 1b) DynamoDB single-table for auth data (users, roles, relationships)
     // Always parent to the component; retain on delete only when NOT ephemeral
     tableOpt := pulumi.MergeResourceOptions(childOpts...)
     if !*args.IsEphemeral {
@@ -145,7 +145,7 @@ func NewAuthorizerWithPolicyStore(
         targs.StreamViewType = pulumi.StringPtr("NEW_AND_OLD_IMAGES")
     }
 
-    table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-tenant", name), targs, tableOpt)
+    table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-auth", name), targs, tableOpt)
     if err != nil {
         return nil, err
     }
@@ -286,9 +286,9 @@ func NewAuthorizerWithPolicyStore(
     comp.PolicyStoreArn = store.Arn
     comp.AuthorizerFunctionArn = fn.Arn
     comp.RoleArn = role.Arn
-    comp.TenantTableArn = table.Arn
+    comp.AuthTableArn = table.Arn
     // StreamArn is only non-nil when streams are enabled on the table
-    comp.TenantTableStreamArn = table.StreamArn
+    comp.AuthTableStreamArn = table.StreamArn
 
     return comp, nil
 }

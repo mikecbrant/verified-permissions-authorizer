@@ -102,7 +102,6 @@ func NewAuthorizerWithPolicyStore(
         tableOpt = pulumi.MergeResourceOptions(tableOpt, pulumi.RetainOnDelete(true))
     }
 
-    
 
     // Build base table args
     targs := &awsdynamodb.TableArgs{

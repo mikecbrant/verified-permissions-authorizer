@@ -1,6 +1,8 @@
 package provider
 
 import (
+    "encoding/json"
+    "os"
     "strings"
     "testing"
 
@@ -209,6 +211,66 @@ func TestCognito_SesConfigValidation(t *testing.T) {
         }, pulumi.WithMocks("test", "dev", mocks))
         if err == nil || !strings.Contains(err.Error(), "must match the Cognito User Pool region (us-west-1)") {
             t.Fatalf("expected region validation error, got: %v", err)
+        }
+    }
+}
+
+// Validate that the provider schema outputs are grouped under cognito, dynamo, and lambda
+// and that legacy flat keys were removed.
+func TestSchema_GroupedOutputs(t *testing.T) {
+    t.Parallel()
+    // Load schema.json relative to this test file
+    b, err := os.ReadFile("../../schema.json")
+    if err != nil {
+        t.Fatalf("failed to read schema.json: %v", err)
+    }
+    var schema map[string]any
+    if err := json.Unmarshal(b, &schema); err != nil {
+        t.Fatalf("invalid schema.json: %v", err)
+    }
+    resources, ok := schema["resources"].(map[string]any)
+    if !ok {
+        t.Fatalf("schema.resources missing or wrong type")
+    }
+    r, ok := resources["verified-permissions-authorizer:index:AuthorizerWithPolicyStore"].(map[string]any)
+    if !ok {
+        t.Fatalf("component resource not found in schema")
+    }
+    props, ok := r["properties"].(map[string]any)
+    if !ok {
+        t.Fatalf("resource.properties missing or wrong type")
+    }
+    // Group keys should exist
+    if _, ok := props["cognito"]; !ok {
+        t.Fatalf("expected grouped output 'cognito'")
+    }
+    if _, ok := props["dynamo"]; !ok {
+        t.Fatalf("expected grouped output 'dynamo'")
+    }
+    if _, ok := props["lambda"]; !ok {
+        t.Fatalf("expected grouped output 'lambda'")
+    }
+    // Validate required group properties
+    lam := props["lambda"].(map[string]any)
+    lamProps, _ := lam["properties"].(map[string]any)
+    if _, ok := lamProps["authorizerFunctionArn"]; !ok {
+        t.Fatalf("expected lambda.authorizerFunctionArn in schema")
+    }
+    if _, ok := lamProps["roleArn"]; !ok {
+        t.Fatalf("expected lambda.roleArn in schema")
+    }
+    ddb := props["dynamo"].(map[string]any)
+    ddbProps, _ := ddb["properties"].(map[string]any)
+    if _, ok := ddbProps["AuthTableArn"]; !ok {
+        t.Fatalf("expected dynamo.AuthTableArn in schema")
+    }
+    // Legacy flat keys should be absent at top-level
+    for _, k := range []string{
+        "AuthTableArn", "AuthTableStreamArn", "authorizerFunctionArn", "roleArn",
+        "userPoolId", "userPoolArn", "userPoolDomain", "identityPoolId", "authRoleArn", "unauthRoleArn",
+    } {
+        if _, exists := props[k]; exists {
+            t.Fatalf("unexpected flat output at top-level: %s", k)
         }
     }
 }

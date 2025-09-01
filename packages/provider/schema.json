@@ -100,26 +100,43 @@
       },
       "requiredInputs": [],
       "properties": {
-        "AuthTableArn": {
-          "type": "string",
-          "description": "ARN of the DynamoDB auth table"
+        "cognito": {
+          "type": "object",
+          "description": "Cognito-related outputs for the provisioned identity source (when configured).",
+          "additionalProperties": false,
+          "properties": {
+            "userPoolArn": { "type": "string" },
+            "userPoolClientIds": { "type": "array", "items": { "type": "string" } },
+            "userPoolId": { "type": "string" }
+          }
         },
-        "AuthTableStreamArn": {
-          "type": "string",
-          "description": "ARN of the DynamoDB auth table stream (when streams are enabled)"
+        "dynamo": {
+          "type": "object",
+          "description": "DynamoDB auth table outputs.",
+          "additionalProperties": false,
+          "properties": {
+            "AuthTableArn": {
+              "type": "string",
+              "description": "ARN of the DynamoDB auth table"
+            },
+            "AuthTableStreamArn": {
+              "type": "string",
+              "description": "ARN of the DynamoDB auth table stream (when streams are enabled)"
+            }
+          }
         },
-        "authRoleArn": { "type": "string" },
-        "authorizerFunctionArn": { "type": "string" },
-        "identityPoolId": { "type": "string" },
+        "lambda": {
+          "type": "object",
+          "description": "Lambda authorizer outputs.",
+          "additionalProperties": false,
+          "properties": {
+            "authorizerFunctionArn": { "type": "string" },
+            "roleArn": { "type": "string" }
+          }
+        },
         "parameters": { "type": "object", "additionalProperties": { "type": "string" } },
         "policyStoreArn": { "type": "string" },
-        "policyStoreId": { "type": "string" },
-        "roleArn": { "type": "string" },
-        "unauthRoleArn": { "type": "string" },
-        "userPoolArn": { "type": "string" },
-        "userPoolClientIds": { "type": "array", "items": { "type": "string" } },
-        "userPoolDomain": { "type": "string" },
-        "userPoolId": { "type": "string" }
+        "policyStoreId": { "type": "string" }
       }
     }
   }

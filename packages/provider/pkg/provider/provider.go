@@ -67,23 +67,34 @@ type DynamoConfig struct {
 type AuthorizerWithPolicyStore struct {
     pulumi.ResourceState
 
+    // Top-level outputs
     PolicyStoreId  pulumi.StringOutput `pulumi:"policyStoreId"`
     PolicyStoreArn pulumi.StringOutput `pulumi:"policyStoreArn"`
-    AuthorizerFunctionArn pulumi.StringOutput `pulumi:"authorizerFunctionArn"`
-    RoleArn        pulumi.StringOutput `pulumi:"roleArn"`
-    // DynamoDB table outputs (exported with PascalCase to match schema/docs)
+    Parameters     pulumi.StringMapOutput `pulumi:"parameters,optional"`
+
+    // Grouped outputs
+    Cognito *CognitoOutputs `pulumi:"cognito,optional"`
+    Dynamo  DynamoOutputs  `pulumi:"dynamo"`
+    Lambda  LambdaOutputs  `pulumi:"lambda"`
+}
+
+// CognitoOutputs groups optional Cognito-related outputs under the `cognito` object.
+type CognitoOutputs struct {
+    UserPoolArn       pulumi.StringPtrOutput   `pulumi:"userPoolArn,optional"`
+    UserPoolClientIds pulumi.StringArrayOutput `pulumi:"userPoolClientIds,optional"`
+    UserPoolId        pulumi.StringPtrOutput   `pulumi:"userPoolId,optional"`
+}
+
+// DynamoOutputs groups DynamoDB auth table outputs under the `dynamo` object.
+type DynamoOutputs struct {
     AuthTableArn       pulumi.StringOutput    `pulumi:"AuthTableArn"`
     AuthTableStreamArn pulumi.StringPtrOutput `pulumi:"AuthTableStreamArn,optional"`
+}
 
-    // Optional Cognito-related outputs
-    UserPoolId        pulumi.StringPtrOutput   `pulumi:"userPoolId,optional"`
-    UserPoolArn       pulumi.StringPtrOutput   `pulumi:"userPoolArn,optional"`
-    UserPoolDomain    pulumi.StringPtrOutput   `pulumi:"userPoolDomain,optional"`
-    IdentityPoolId    pulumi.StringPtrOutput   `pulumi:"identityPoolId,optional"`
-    AuthRoleArn       pulumi.StringPtrOutput   `pulumi:"authRoleArn,optional"`
-    UnauthRoleArn     pulumi.StringPtrOutput   `pulumi:"unauthRoleArn,optional"`
-    UserPoolClientIds pulumi.StringArrayOutput `pulumi:"userPoolClientIds,optional"`
-    Parameters        pulumi.StringMapOutput   `pulumi:"parameters,optional"`
+// LambdaOutputs groups Lambda authorizer outputs under the `lambda` object.
+type LambdaOutputs struct {
+    AuthorizerFunctionArn pulumi.StringOutput `pulumi:"authorizerFunctionArn"`
+    RoleArn               pulumi.StringOutput `pulumi:"roleArn"`
 }
 
 func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
@@ -363,11 +374,12 @@ func NewAuthorizerWithPolicyStore(
     // Wire base outputs
     comp.PolicyStoreId = store.ID().ToStringOutput()
     comp.PolicyStoreArn = store.Arn
-    comp.AuthorizerFunctionArn = fn.Arn
-    comp.RoleArn = role.Arn
-    // StreamArn is only non-nil when streams are enabled on the table
-    comp.AuthTableArn = table.Arn
-    comp.AuthTableStreamArn = table.StreamArn
+    // Grouped output assignments
+    comp.Lambda.AuthorizerFunctionArn = fn.Arn
+    comp.Lambda.RoleArn = role.Arn
+    // Dynamo: StreamArn is only non-nil when streams are enabled on the table
+    comp.Dynamo.AuthTableArn = table.Arn
+    comp.Dynamo.AuthTableStreamArn = table.StreamArn
 
     // 5) Optional Cognito provisioning + Verified Permissions identity source
     if args.Cognito != nil {
@@ -375,9 +387,11 @@ func NewAuthorizerWithPolicyStore(
         if err != nil {
             return nil, err
         }
-        comp.UserPoolId = cog.UserPoolId.ToStringPtrOutput()
-        comp.UserPoolArn = cog.UserPoolArn.ToStringPtrOutput()
-        comp.UserPoolClientIds = cog.ClientIds
+        comp.Cognito = &CognitoOutputs{
+            UserPoolId:        cog.UserPoolId.ToStringPtrOutput(),
+            UserPoolArn:       cog.UserPoolArn.ToStringPtrOutput(),
+            UserPoolClientIds: cog.ClientIds,
+        }
         comp.Parameters = cog.Parameters
     }
 

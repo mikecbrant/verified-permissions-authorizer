@@ -4,7 +4,7 @@ This is a multi-language Pulumi Component Provider implemented in Go. It provisi
 
 - An AWS Verified Permissions Policy Store
 - An AWS Lambda Request Authorizer whose code is bundled from the sibling TypeScript package at `packages/lambda-authorizer`
-- Optionally, an AWS Cognito User Pool (domain and Identity Pool) and configures it as the Verified Permissions identity source
+- Optionally, an AWS Cognito User Pool and configures it as the Verified Permissions identity source
 
 Interface (stable)
 - Resource token: `verified-permissions-authorizer:index:AuthorizerWithPolicyStore`
@@ -25,11 +25,20 @@ Interface (stable)
       - `replyToEmail` (string, optional)
       - `configurationSet` (string, optional)
 - Outputs:
-  - `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `AuthTableArn`, `AuthTableStreamArn?`
+  - Top-level:
+    - `policyStoreId`, `policyStoreArn`, `parameters?`
+  - Grouped (mirrors inputs):
+    - `lambda`: `{ authorizerFunctionArn, roleArn }`
+    - `dynamo`: `{ AuthTableArn, AuthTableStreamArn? }`
+    - `cognito` (when configured): `{ userPoolId?, userPoolArn?, userPoolClientIds?[] }`
 
 Breaking change
-- Deprecated DynamoDB table output aliases have been removed. Use `AuthTableArn` and `AuthTableStreamArn`.
-  - When Cognito is provisioned: `userPoolId`, `userPoolArn`, `userPoolDomain`, `identityPoolId?`, `authRoleArn?`, `unauthRoleArn?`, `userPoolClientIds[]`, `parameters` (includes `USER_POOL_ID`)
+- Outputs are now grouped under `cognito`, `dynamo`, and `lambda`. Legacy flat outputs were removed.
+  - Replace `authorizerFunctionArn` with `lambda.authorizerFunctionArn`.
+  - Replace `roleArn` (Lambda role) with `lambda.roleArn`.
+  - Replace `AuthTableArn`/`AuthTableStreamArn` with `dynamo.AuthTableArn`/`dynamo.AuthTableStreamArn`.
+  - Replace Cognito flat outputs (e.g., `userPoolId`) with `cognito.userPoolId` (and similar for the rest).
+  - `policyStoreId` and `policyStoreArn` remain top-level.
 
 Lambda contract (fixed)
 - Runtime: `nodejs22.x` (not configurable)

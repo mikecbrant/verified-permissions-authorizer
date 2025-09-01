@@ -34,22 +34,28 @@ type AuthorizerWithPolicyStoreArgs = {
   cognito?: pulumi.Input<CognitoConfig>;
 };
 
+// Output group shapes
+type AuthorizerLambdaOutputs = {
+  authorizerFunctionArn: pulumi.Output<string>;
+  roleArn: pulumi.Output<string>;
+};
+type AuthorizerDynamoOutputs = {
+  AuthTableArn: pulumi.Output<string>;
+  AuthTableStreamArn: pulumi.Output<string | undefined>;
+};
+type AuthorizerCognitoOutputs = {
+  userPoolId: pulumi.Output<string | undefined>;
+  userPoolArn: pulumi.Output<string | undefined>;
+  userPoolClientIds: pulumi.Output<string[] | undefined>;
+};
+
 class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   public readonly policyStoreId!: pulumi.Output<string>;
   public readonly policyStoreArn!: pulumi.Output<string>;
-  public readonly authorizerFunctionArn!: pulumi.Output<string>;
-  public readonly roleArn!: pulumi.Output<string>;
-  // DynamoDB auth table outputs
-  public readonly AuthTableArn!: pulumi.Output<string>;
-  public readonly AuthTableStreamArn!: pulumi.Output<string | undefined>;
-  // Optional Cognito outputs
-  public readonly userPoolId!: pulumi.Output<string | undefined>;
-  public readonly userPoolArn!: pulumi.Output<string | undefined>;
-  public readonly userPoolDomain!: pulumi.Output<string | undefined>;
-  public readonly identityPoolId!: pulumi.Output<string | undefined>;
-  public readonly authRoleArn!: pulumi.Output<string | undefined>;
-  public readonly unauthRoleArn!: pulumi.Output<string | undefined>;
-  public readonly userPoolClientIds!: pulumi.Output<string[] | undefined>;
+  // Grouped outputs
+  public readonly lambda!: AuthorizerLambdaOutputs;
+  public readonly dynamo!: AuthorizerDynamoOutputs;
+  public readonly cognito!: AuthorizerCognitoOutputs;
   public readonly parameters!: pulumi.Output<
     Record<string, string> | undefined
   >;
@@ -68,38 +74,54 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
     );
     const get = (n: string): pulumi.Output<any> =>
       (this as any).getOutput(n) as pulumi.Output<any>;
-    const req = <T>(name: string): pulumi.Output<T> =>
-      get(name).apply((v) => {
-        if (v === undefined || v === null) {
-          throw new Error(`Required output not set: ${name}`);
-        }
-        return v as T;
-      }) as pulumi.Output<T>;
-    const opt = <T>(name: string): pulumi.Output<T | undefined> =>
-      get(name).apply((v) => (v === null ? undefined : (v as T | undefined)));
     this.policyStoreId = get("policyStoreId") as pulumi.Output<string>;
     this.policyStoreArn = get("policyStoreArn") as pulumi.Output<string>;
-    this.authorizerFunctionArn = get(
-      "authorizerFunctionArn",
-    ) as pulumi.Output<string>;
-    this.roleArn = get("roleArn") as pulumi.Output<string>;
-    this.AuthTableArn = req<string>("AuthTableArn");
-    this.AuthTableStreamArn = opt<string>("AuthTableStreamArn");
-    this.userPoolId = get("userPoolId") as pulumi.Output<string | undefined>;
-    this.userPoolArn = get("userPoolArn") as pulumi.Output<string | undefined>;
-    this.userPoolDomain = get("userPoolDomain") as pulumi.Output<
-      string | undefined
-    >;
-    this.identityPoolId = get("identityPoolId") as pulumi.Output<
-      string | undefined
-    >;
-    this.authRoleArn = get("authRoleArn") as pulumi.Output<string | undefined>;
-    this.unauthRoleArn = get("unauthRoleArn") as pulumi.Output<
-      string | undefined
-    >;
-    this.userPoolClientIds = get("userPoolClientIds") as pulumi.Output<
-      string[] | undefined
-    >;
+
+    const g = (n: string): pulumi.Output<any> => get(n) as pulumi.Output<any>;
+
+    // lambda group
+    const lambda = g("lambda");
+    this.lambda = {
+      authorizerFunctionArn: lambda.apply((o) => {
+        if (!o?.authorizerFunctionArn) {
+          throw new Error(
+            "Required output not set: lambda.authorizerFunctionArn",
+          );
+        }
+        return o.authorizerFunctionArn as string;
+      }),
+      roleArn: lambda.apply((o) => {
+        if (!o?.roleArn) {
+          throw new Error("Required output not set: lambda.roleArn");
+        }
+        return o.roleArn as string;
+      }),
+    };
+
+    // dynamo group
+    const dynamo = g("dynamo");
+    this.dynamo = {
+      AuthTableArn: dynamo.apply((o) => {
+        if (!o?.AuthTableArn) {
+          throw new Error("Required output not set: dynamo.AuthTableArn");
+        }
+        return o.AuthTableArn as string;
+      }),
+      AuthTableStreamArn: dynamo.apply(
+        (o) => (o?.AuthTableStreamArn as string | undefined) ?? undefined,
+      ),
+    };
+
+    // cognito group (optional fields)
+    const cognito = g("cognito");
+    this.cognito = {
+      userPoolId: cognito.apply((o) => o?.userPoolId as string | undefined),
+      userPoolArn: cognito.apply((o) => o?.userPoolArn as string | undefined),
+      userPoolClientIds: cognito.apply(
+        (o) => o?.userPoolClientIds as string[] | undefined,
+      ),
+    };
+
     this.parameters = get("parameters") as pulumi.Output<
       Record<string, string> | undefined
     >;
@@ -107,6 +129,10 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
 }
 
 export {
+  // Output group shapes (exported for convenience in TS projects)
+  type AuthorizerCognitoOutputs,
+  type AuthorizerDynamoOutputs,
+  type AuthorizerLambdaOutputs,
   AuthorizerWithPolicyStore,
   type AuthorizerWithPolicyStoreArgs,
   type CognitoConfig,

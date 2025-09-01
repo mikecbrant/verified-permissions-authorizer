@@ -70,6 +70,30 @@
               "description": "Allowed sign-in identifiers for the User Pool.",
               "items": { "type": "string", "enum": ["email", "phone", "preferredUsername"] },
               "default": ["email"]
+            },
+            "sesConfig": {
+              "type": "object",
+              "description": "Optional: configure the User Pool to send email via Amazon SES (DEVELOPER). When provided, the pool's EmailConfiguration is set accordingly and a resource policy is attached to the SES identity authorizing the Cognito service principal scoped to this User Pool.",
+              "properties": {
+                "sourceArn": {
+                  "type": "string",
+                  "description": "SES identity ARN to send from. Example: arn:aws:ses:us-east-1:123456789012:identity/example.com",
+                  "pattern": "^arn:(aws|aws-us-gov|aws-cn):ses:[a-z0-9-]+:[0-9]{12}:identity/.+$"
+                },
+                "from": {
+                  "type": "string",
+                  "description": "From address. Must match the SES email identity or be within the SES domain identity."
+                },
+                "replyToEmail": {
+                  "type": "string",
+                  "description": "Optional Reply-To address"
+                },
+                "configurationSet": {
+                  "type": "string",
+                  "description": "Optional SES configuration set name"
+                }
+              },
+              "required": ["sourceArn", "from"]
             }
           }
         }

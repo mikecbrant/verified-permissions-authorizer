@@ -2,7 +2,11 @@ package provider
 
 import (
     "embed"
+    "encoding/json"
     "fmt"
+    "net/mail"
+    "regexp"
+    "strings"
 
     aws "github.com/pulumi/pulumi-aws/sdk/v6/go/aws"
     awscognito "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cognito"
@@ -10,6 +14,7 @@ import (
     awsdynamodb "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/dynamodb"
     awsiam "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
     awslambda "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lambda"
+    awssesv2 "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/sesv2"
     awsvp "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/verifiedpermissions"
     p "github.com/pulumi/pulumi-go-provider"
     "github.com/pulumi/pulumi-go-provider/infer"
@@ -394,6 +399,8 @@ func withRetention(opts pulumi.ResourceOption, retain bool) pulumi.ResourceOptio
 type CognitoConfig struct {
     // Allowed sign-in aliases; defaults to ["email"]. Allowed values: email, phone, preferredUsername.
     SignInAliases []string `pulumi:"signInAliases,optional"`
+    // Optional Amazon SES configuration for Cognito User Pool email sending.
+    SesConfig *CognitoSesConfig `pulumi:"sesConfig,optional"`
 }
 
 type cognitoProvisionResult struct {
@@ -446,9 +453,116 @@ func provisionCognito(
         upArgs.AliasAttributes = pulumi.StringArray(aliasAttrs)
     }
 
+    // Optional: SES-backed email sending
+    var (
+        regionName      string
+        sesIdentityName string
+        sesCallerAcct   string
+        fromEmail       string
+        sesIdentityRegion string
+    )
+    if cfg.SesConfig != nil {
+        // Look up current AWS region and caller (for validation + policy construction)
+        region, err := aws.GetRegion(ctx, nil)
+        if err != nil {
+            return nil, fmt.Errorf("failed to get AWS region: %w", err)
+        }
+        regionName = region.Name
+
+        caller, err := aws.GetCallerIdentity(ctx, nil)
+        if err != nil {
+            return nil, fmt.Errorf("failed to get AWS caller identity: %w", err)
+        }
+        sesCallerAcct = caller.AccountId
+
+        // Validate config + extract SES identity account/name/region
+        acc, ident, identRegion, err := validateSesConfig(*cfg.SesConfig, regionName)
+        if err != nil {
+            return nil, err
+        }
+        sesIdentityName = ident
+        sesIdentityRegion = identRegion
+        if acc != sesCallerAcct {
+            return nil, fmt.Errorf("cognito.sesConfig.sourceArn account (%s) must match the current AWS account (%s); cross-account identities are not supported", acc, sesCallerAcct)
+        }
+        if addr, err := mail.ParseAddress(cfg.SesConfig.From); err == nil && addr.Address != "" {
+            fromEmail = addr.Address
+        } else {
+            fromEmail = cfg.SesConfig.From
+        }
+
+        // Create a region-scoped AWS provider for SES (when identity region differs)
+        _ = identRegion // currently unused outside resource option; keep for clarity
+
+        // Configure the user pool to use SES (DEVELOPER) with provided values
+        upArgs.EmailConfiguration = &awscognito.UserPoolEmailConfigurationArgs{
+            EmailSendingAccount: pulumi.String("DEVELOPER"),
+            SourceArn:           pulumi.StringPtr(cfg.SesConfig.SourceArn),
+            From:                pulumi.StringPtr(cfg.SesConfig.From),
+        }
+        if cfg.SesConfig.ReplyToEmail != nil && *cfg.SesConfig.ReplyToEmail != "" {
+            upArgs.EmailConfiguration.ReplyToEmailAddress = pulumi.StringPtr(*cfg.SesConfig.ReplyToEmail)
+        }
+        if cfg.SesConfig.ConfigurationSet != nil && *cfg.SesConfig.ConfigurationSet != "" {
+            upArgs.EmailConfiguration.ConfigurationSet = pulumi.StringPtr(*cfg.SesConfig.ConfigurationSet)
+        }
+    }
+
     userPool, err := awscognito.NewUserPool(ctx, fmt.Sprintf("%s-userpool", name), upArgs, opts)
     if err != nil {
         return nil, err
+    }
+
+    // If SES config was provided, attach the SES identity policy now that we have a pool ID
+    if cfg.SesConfig != nil {
+        // Build policy JSON using user pool ID -> ARN with proper JSON escaping
+        policy := userPool.ID().ApplyT(func(id string) (string, error) {
+            upArn := fmt.Sprintf("arn:%s:cognito-idp:%s:%s:userpool/%s", partitionForRegion(regionName), regionName, sesCallerAcct, id)
+            principalService := "cognito-idp.amazonaws.com"
+            if partitionForRegion(regionName) == "aws-cn" {
+                principalService = "cognito-idp.amazonaws.com.cn"
+            }
+            cond := map[string]any{
+                "aws:SourceAccount": sesCallerAcct,
+                "aws:SourceArn":     upArn,
+            }
+            if fromEmail != "" {
+                cond["ses:FromAddress"] = fromEmail
+            }
+            doc := map[string]any{
+                "Version": "2012-10-17",
+                "Statement": []any{
+                    map[string]any{
+                        "Sid":      "AllowCognitoUserPool",
+                        "Effect":   "Allow",
+                        "Resource": cfg.SesConfig.SourceArn,
+                        "Principal": map[string]any{"Service": []string{principalService}},
+                        "Action":   []string{"ses:SendEmail", "ses:SendRawEmail"},
+                        "Condition": map[string]any{
+                            "StringEquals": cond,
+                        },
+                    },
+                },
+            }
+            b, err := json.Marshal(doc)
+            if err != nil {
+                return "", err
+            }
+            return string(b), nil
+        }).(pulumi.StringOutput)
+
+        // Create a region-scoped AWS provider for SES in the identity's region
+        sesProv, err := aws.NewProvider(ctx, fmt.Sprintf("%s-ses-%s", name, sesIdentityRegion), &aws.ProviderArgs{Region: pulumi.String(sesIdentityRegion)})
+        if err != nil {
+            return nil, err
+        }
+        if _, err := awssesv2.NewEmailIdentityPolicy(ctx, fmt.Sprintf("%s-ses-identity-policy", name), &awssesv2.EmailIdentityPolicyArgs{
+            EmailIdentity: pulumi.String(sesIdentityName),
+            PolicyName:    pulumi.String(fmt.Sprintf("%s-cognito", name)),
+            Policy:        policy,
+        }, pulumi.Merge(withRetention(opts, retainOnDelete), pulumi.Provider(sesProv))); err != nil {
+            return nil, err
+        }
     }
 
     // Create one or more user pool clients (at least one is required to bind as VP identity source)
@@ -494,3 +608,126 @@ func provisionCognito(
 // Note: Identity Pools, lifecycle triggers, templates, and other advanced Cognito
 // options were intentionally removed from the public configuration surface. The
 // provider creates a minimal User Pool + client and binds it as the VP identity source.
+
+// ---- SES config + validation helpers ----
+
+// CognitoSesConfig describes optional SES settings to configure Cognito User Pool email sending.
+type CognitoSesConfig struct {
+    SourceArn        string  `pulumi:"sourceArn"`
+    From             string  `pulumi:"from"`
+    ReplyToEmail     *string `pulumi:"replyToEmail,optional"`
+    ConfigurationSet *string `pulumi:"configurationSet,optional"`
+}
+
+var sesIdentityArnRe = regexp.MustCompile(`^arn:(aws|aws-us-gov|aws-cn):ses:([a-z0-9-]+):([0-9]{12}):identity\/(.+)$`)
+
+// partitionForRegion derives the AWS partition from a region name.
+func partitionForRegion(region string) string {
+    switch {
+    case strings.HasPrefix(region, "cn-"):
+        return "aws-cn"
+    case strings.HasPrefix(region, "us-gov-"):
+        return "aws-us-gov"
+    default:
+        return "aws"
+    }
+}
+
+// validateSesConfig performs static validation and domain/email checks. It returns the account id and identity name
+// parsed from the sourceArn when valid.
+func validateSesConfig(cfg CognitoSesConfig, userPoolRegion string) (account string, identity string, identityRegion string, err error) {
+    // Parse ARN
+    m := sesIdentityArnRe.FindStringSubmatch(cfg.SourceArn)
+    if m == nil {
+        return "", "", fmt.Errorf("cognito.sesConfig.sourceArn must be an SES identity ARN (…:ses:<region>:<account>:identity/<email-or-domain>)")
+    }
+    part := m[1]
+    identityRegion = m[2]
+    account = m[3]
+    identity = m[4]
+
+    // Validate 'from' as an email address
+    addr, err := mail.ParseAddress(cfg.From)
+    if err != nil || addr.Address == "" || !strings.Contains(addr.Address, "@") {
+        return "", "", fmt.Errorf("cognito.sesConfig.from must be a valid email address (got %q)", cfg.From)
+    }
+    fromLower := strings.ToLower(addr.Address)
+
+    // Identity-specific rules
+    if strings.Contains(identity, "@") {
+        // Email identity: from must match exactly
+        if fromLower != strings.ToLower(identity) {
+            return "", "", fmt.Errorf("cognito.sesConfig.from must equal the SES email identity %q", identity)
+        }
+    } else {
+        // Domain identity: from must be within the domain (allow exact domain or subdomains)
+        dom := strings.ToLower(identity)
+        parts := strings.SplitN(fromLower, "@", 2)
+        if len(parts) != 2 {
+            return "", "", fmt.Errorf("cognito.sesConfig.from must be a valid email address (got %q)", cfg.From)
+        }
+        fromDom := parts[1]
+        if fromDom != dom && !strings.HasSuffix(fromDom, "."+dom) {
+            return "", "", fmt.Errorf("cognito.sesConfig.from (%s) must be an address within domain %q", cfg.From, identity)
+        }
+    }
+
+    // Optional validation for replyTo
+    if cfg.ReplyToEmail != nil && *cfg.ReplyToEmail != "" {
+        if addr, err := mail.ParseAddress(*cfg.ReplyToEmail); err != nil || addr.Address == "" || !strings.Contains(addr.Address, "@") {
+            return "", "", fmt.Errorf("cognito.sesConfig.replyToEmail must be a valid email address (got %q)", *cfg.ReplyToEmail)
+        }
+    }
+
+    // Region constraints: enforce common Cognito+SES rules for DEVELOPER sending
+    // 1) Regions that require in-region-only SES identities
+    inRegionOnly := map[string]struct{}{
+        "us-west-1":      {},
+        "ap-northeast-3": {}, // Osaka
+        "ap-southeast-3": {}, // Jakarta
+        "eu-west-3":      {}, // Paris
+        "eu-north-1":     {}, // Stockholm
+        "eu-south-1":     {}, // Milan
+        "sa-east-1":      {}, // Sao Paulo
+        "il-central-1":   {}, // Tel Aviv
+        "af-south-1":     {}, // Cape Town
+    }
+    if _, ok := inRegionOnly[userPoolRegion]; ok {
+        if identityRegion != userPoolRegion {
+            return "", "", "", fmt.Errorf("cognito.sesConfig.sourceArn region (%s) must match the Cognito User Pool region (%s) for this Region's in-region-only sending model", identityRegion, userPoolRegion)
+        }
+        return account, identity, identityRegion, nil
+    }
+
+    // 2) Regions that require an alternate SES Region (first listed). For DEVELOPER, only the first applies.
+    altFirst := map[string]string{
+        "ap-east-1":     "ap-southeast-1", // Hong Kong -> Singapore
+        "ap-south-2":    "ap-south-1",     // Hyderabad -> Mumbai
+        "ap-southeast-4": "ap-southeast-2", // Melbourne -> Sydney
+        "ap-southeast-5": "ap-southeast-2", // Malaysia -> Sydney
+        "ca-west-1":     "ca-central-1",   // Calgary -> Montreal
+        "eu-central-2":  "eu-central-1",   // Zurich -> Frankfurt
+        "eu-south-2":    "eu-west-3",      // Spain -> Paris
+        "me-central-1":  "eu-central-1",   // UAE -> Frankfurt
+    }
+    if first, ok := altFirst[userPoolRegion]; ok {
+        if identityRegion != first {
+            return "", "", "", fmt.Errorf("cognito.sesConfig.sourceArn region (%s) must be %s for Cognito region %s", identityRegion, first, userPoolRegion)
+        }
+        return account, identity, identityRegion, nil
+    }
+
+    // 3) Backwards-compatible Regions: allow same-region or one of the three historical SES Regions
+    allowedBC := map[string]struct{}{"us-east-1": {}, "us-west-2": {}, "eu-west-1": {}}
+    if identityRegion != userPoolRegion {
+        if _, ok := allowedBC[identityRegion]; !ok {
+            return "", "", "", fmt.Errorf("cognito.sesConfig.sourceArn region (%s) must either match the Cognito User Pool region (%s) or be one of [us-east-1, us-west-2, eu-west-1] per Cognito+SES cross-region rules", identityRegion, userPoolRegion)
+        }
+    }
+    // Partition compatibility
+    if partitionForRegion(identityRegion) != partitionForRegion(userPoolRegion) {
+        return "", "", "", fmt.Errorf("cognito.sesConfig.sourceArn partition (%s) is incompatible with Cognito region %s", part, userPoolRegion)
+    }
+
+    return account, identity, identityRegion, nil
+}

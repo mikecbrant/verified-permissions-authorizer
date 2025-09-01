@@ -13,3 +13,7 @@ Notes
 - The provider is tightly coupled to the Lambda: changes to `packages/lambda-authorizer` cause a provider release.
 
 See `packages/provider/README.md`, `packages/sdk/nodejs/`, and `packages/lambda-authorizer/README.md` for package‑specific details.
+
+## Cognito + SES
+
+When you opt into Cognito by supplying the top-level `cognito` input on the provider, you can also configure SES-backed email sending via `cognito.sesConfig`. See `packages/provider/README.md` for the full field list and validation rules.

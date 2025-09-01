@@ -5,14 +5,17 @@
   "packageManager": "pnpm@10.15.0",
   "scripts": {
     "build": "pnpm -r --parallel build",
-    "lint": "pnpm -r lint",
+    "lint": "pnpm -r lint && pnpm go:lint",
     "typecheck": "pnpm -r typecheck",
     "format": "pnpm -r format",
-    "format:write": "pnpm -r format:write",
+    "format:write": "pnpm -r format:write && pnpm format:go",
     "clean": "pnpm -r clean",
     "changeset": "changeset",
     "release": "changeset version && pnpm -r build",
-    "test": "pnpm -r test && bash -lc 'if command -v go >/dev/null 2>&1; then cd packages/provider && go test ./... -coverprofile=coverage.out -covermode=count; else echo \"[skip] go not installed; skipping provider tests locally\"; fi'"
+    "test": "pnpm -r test && pnpm go:test",
+    "go:lint": "bash -lc 'cd packages/provider && go vet ./...'",
+    "go:test": "bash -lc 'if command -v go >/dev/null 2>&1; then cd packages/provider && go test ./... -coverprofile=coverage.out -covermode=count; else echo \"[skip] go not installed; skipping provider tests locally\"; fi'",
+    "format:go": "bash -lc 'gofmt -s -w packages/provider'"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.8"

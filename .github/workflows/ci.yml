@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main, "**" ]
+  push:
+    branches: [ "**" ]
+
+jobs:
+  build:
+    name: Lint, test (Node + Go)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck + Lint (TS)
+        run: |
+          pnpm -r typecheck
+          pnpm -r lint
+
+      - name: Unit tests (Node packages)
+        run: pnpm -r test
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'packages/provider/go.mod'
+
+      - name: Go vet (lint)
+        run: pnpm go:lint
+
+      - name: Unit tests (Go provider)
+        run: pnpm go:test

@@ -33,19 +33,15 @@ type AuthorizerArgs struct {
     LambdaEnv      map[string]string `pulumi:"lambdaEnvironment,optional"`
     // If true, treat the stage as ephemeral: destroy resources on stack removal (no retention).
     IsEphemeral *bool `pulumi:"isEphemeral,optional"`
-    // Deprecated: use isEphemeral instead.
-    EphemeralStage *bool `pulumi:"ephemeralStage,optional"`
     // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
-    EnableDynamoDbStreams *bool `pulumi:"enableDynamoDbStreams,optional"`
-    // Deprecated: validation mode is fixed to STRICT and this input is ignored.
-    ValidationMode *string `pulumi:"validationMode,optional"`
+    EnableDynamoDbStream *bool `pulumi:"enableDynamoDbStream,optional"`
 }
 
 // AuthorizerResult defines the outputs for the component resource.
 type AuthorizerResult struct {
     PolicyStoreId  string `pulumi:"policyStoreId"`
     PolicyStoreArn string `pulumi:"policyStoreArn"`
-    FunctionArn    string `pulumi:"functionArn"`
+    AuthorizerFunctionArn string `pulumi:"authorizerFunctionArn"`
     RoleArn        string `pulumi:"roleArn"`
     // DynamoDB table outputs (exported with PascalCase to match existing schema)
     TenantTableArn       string  `pulumi:"TenantTableArn"`
@@ -63,27 +59,17 @@ func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
 // Construct implements the component creation logic.
 func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, args AuthorizerArgs, opts pulumi.ResourceOption) (AuthorizerResult, error) {
     var res AuthorizerResult
-    // Defaults for new provider-level options
-    // Back-compat: honor legacy ephemeralStage if isEphemeral not provided
-    if args.IsEphemeral == nil && args.EphemeralStage != nil {
-        args.IsEphemeral = args.EphemeralStage
-    }
-    if args.IsEphemeral != nil && args.EphemeralStage != nil && *args.IsEphemeral != *args.EphemeralStage {
-        ctx.Log.Warn("Both isEphemeral and deprecated ephemeralStage were provided; using isEphemeral and ignoring ephemeralStage.", nil)
-    }
+    // Defaults for provider-level options
     if args.IsEphemeral == nil {
         b := false
         args.IsEphemeral = &b
     }
-    if args.EnableDynamoDbStreams == nil {
+    if args.EnableDynamoDbStream == nil {
         b := false
-        args.EnableDynamoDbStreams = &b
+        args.EnableDynamoDbStream = &b
     }
 
     // 1) Verified Permissions Policy Store
-    if args.ValidationMode != nil {
-        ctx.Log.Warn("validationMode is deprecated and ignored; the provider always uses STRICT.", nil)
-    }
     storeArgs := &awsvp.PolicyStoreArgs{
         ValidationSettings: awsvp.PolicyStoreValidationSettingsArgs{
             // Fixed to STRICT per review; not configurable
@@ -143,7 +129,7 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
     }
 
     // Streams optional
-    if *args.EnableDynamoDbStreams {
+    if *args.EnableDynamoDbStream {
         targs.StreamEnabled = pulumi.BoolPtr(true)
         targs.StreamViewType = pulumi.StringPtr("NEW_AND_OLD_IMAGES")
     }
@@ -291,12 +277,12 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
     outputs := map[string]any{
         "policyStoreId":  store.ID(),
         "policyStoreArn": store.Arn,
-        "functionArn":    fn.Arn,
+        "authorizerFunctionArn": fn.Arn,
         "roleArn":        role.Arn,
         // Exports with exact names as required
         "TenantTableArn": table.Arn,
     }
-    if *args.EnableDynamoDbStreams {
+    if *args.EnableDynamoDbStream {
         outputs["TenantTableStreamArn"] = table.StreamArn
     }
     return AuthorizerResult{}, infer.SetOutputs(outputs)

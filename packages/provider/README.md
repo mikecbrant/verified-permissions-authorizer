@@ -7,8 +7,8 @@ This is a multi-language Pulumi Component Provider implemented in Go. It provisi
 
 Interface (stable)
 - Resource token: `verified-permissions-authorizer:index:AuthorizerWithPolicyStore`
-- Inputs: `description?`, `lambdaEnvironment?` (map<string,string>), `enableDynamoDbStreams?` (boolean, default `false`), `isEphemeral?` (boolean, default `false`)
-- Outputs: `policyStoreId`, `policyStoreArn`, `functionArn`, `roleArn`, `TenantTableArn`, `TenantTableStreamArn?`
+- Inputs: `description?`, `lambdaEnvironment?` (map<string,string>), `enableDynamoDbStream?` (boolean, default `false`), `isEphemeral?` (boolean, default `false`)
+- Outputs: `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `TenantTableArn`, `TenantTableStreamArn?`
 
 Lambda contract (fixed)
 - Runtime: `nodejs22.x` (not configurable)

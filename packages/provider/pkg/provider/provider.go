@@ -82,7 +82,7 @@ func NewAuthorizerWithPolicyStore(
     // 1) Verified Permissions Policy Store
     storeArgs := &awsvp.PolicyStoreArgs{
         ValidationSettings: awsvp.PolicyStoreValidationSettingsArgs{
-            // Validation mode is STRICT (fixed, not configurable)
+            // Validation mode is STRICT (not configurable)
             Mode: pulumi.String("STRICT"),
         },
     }

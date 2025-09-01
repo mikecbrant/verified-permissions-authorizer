@@ -10,7 +10,9 @@ Interface (stable)
 - Inputs: `description?`, `lambdaEnvironment?` (map<string,string>), `enableDynamoDbStream?` (boolean, default `false`), `isEphemeral?` (boolean, default `false`)
 - Outputs: `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `TenantTableArn`, `TenantTableStreamArn?`
 
-## DynamoDB tenant table
+Note: Output property names retain the legacy `Tenant*` prefix for compatibility (e.g., `TenantTableArn`, `TenantTableStreamArn`).
+
+## DynamoDB auth table
 - Keys/attributes: `PK` (hash), `SK` (range), `GSI1PK` (hash), `GSI1SK` (range), `GSI2PK` (hash), `GSI2SK` (range)
 - GSIs: `GSI1` and `GSI2` (ProjectionType `ALL`)
 - Billing mode: `PAY_PER_REQUEST`

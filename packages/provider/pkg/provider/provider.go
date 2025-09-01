@@ -33,7 +33,7 @@ type AuthorizerArgs struct {
     LambdaEnv      map[string]string `pulumi:"lambdaEnvironment,optional"`
     // If true, treat the stage as ephemeral: destroy resources on stack removal (no retention).
     IsEphemeral *bool `pulumi:"isEphemeral,optional"`
-    // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
+    // If true, enable DynamoDB Streams on the auth table (NEW_AND_OLD_IMAGES).
     EnableDynamoDbStream *bool `pulumi:"enableDynamoDbStream,optional"`
 }
 
@@ -95,12 +95,18 @@ func NewAuthorizerWithPolicyStore(
         return nil, err
     }
 
-    // 1b) DynamoDB single-table for tenants/users/roles
+    // 1b) DynamoDB single-table for auth data (users, roles, relationships)
     // Always parent to the component; retain on delete only when NOT ephemeral
     tableOpt := pulumi.MergeResourceOptions(childOpts...)
     if !*args.IsEphemeral {
         tableOpt = pulumi.MergeResourceOptions(tableOpt, pulumi.RetainOnDelete(true))
     }
+
+    // Preserve existing stacks that used the previous logical name suffix "-tenant" by
+    // aliasing the old resource name to the new one. This avoids replacement when upgrading.
+    tableOpt = pulumi.MergeResourceOptions(tableOpt, pulumi.Aliases([]pulumi.Alias{
+        {Name: pulumi.String(fmt.Sprintf("%s-tenant", name))},
+    }))
 
     // Build base table args
     targs := &awsdynamodb.TableArgs{
@@ -145,7 +151,7 @@ func NewAuthorizerWithPolicyStore(
         targs.StreamViewType = pulumi.StringPtr("NEW_AND_OLD_IMAGES")
     }
 
-    table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-tenant", name), targs, tableOpt)
+    table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-auth", name), targs, tableOpt)
     if err != nil {
         return nil, err
     }

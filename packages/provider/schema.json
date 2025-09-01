@@ -24,7 +24,7 @@
         },
         "enableDynamoDbStream": {
           "type": "boolean",
-          "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the tenant table",
+          "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the auth table",
           "plain": true,
           "default": false
         },
@@ -58,11 +58,11 @@
         },
         "TenantTableArn": {
           "type": "string",
-          "description": "ARN of the DynamoDB tenant table"
+          "description": "ARN of the DynamoDB auth table"
         },
         "TenantTableStreamArn": {
           "type": "string",
-          "description": "ARN of the DynamoDB tenant table stream (when streams are enabled)"
+          "description": "ARN of the DynamoDB auth table stream (when streams are enabled)"
         }
       }
     }

@@ -42,7 +42,7 @@ Verified Permissions identity source
 - When `cognito` is supplied, an `aws.verifiedpermissions.IdentitySource` is created pointing at the provisioned User Pool and its client IDs.
 
 Retention / deletion semantics
-- Controlled by `isEphemeral` (mirrors VP-6): if `false`, resources use retain-on-delete and the User Pool has deletion protection enabled; if `true`, resources are fully destroyable and deletion protection is disabled.
+- Controlled by `isEphemeral`: if `false`, resources use retain-on-delete and the User Pool has deletion protection enabled; if `true`, resources are fully destroyable and deletion protection is disabled.
 
 Publishing
 - The provider schema (`packages/provider/schema.json`) is published to the Pulumi Registry.

@@ -1,7 +1,7 @@
 package provider
 
 import (
-    _ "embed"
+    "embed"
     "fmt"
 
     awscloudwatch "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudwatch"
@@ -19,11 +19,11 @@ var authorizerIndexMjs string
 
 // NewProvider wires up the multi-language component provider surface.
 func NewProvider() (p.Provider, error) {
-    return infer.Provider(infer.Options{
+    return infer.NewProvider(infer.Options{
         Components: []infer.InferredComponent{
             infer.Component(NewAuthorizerWithPolicyStore),
         },
-    }), nil
+    })
 }
 
 // AuthorizerArgs defines the inputs for the component resource.
@@ -54,7 +54,7 @@ type AuthorizerWithPolicyStore struct {
 
 func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
     a.Describe(&c, "Provision an AWS Verified Permissions Policy Store and a bundled Lambda Request Authorizer.")
-    a.SetToken("index", "AuthorizerWithPolicyStore")
+    a.Token(&c, "verified-permissions-authorizer:index:AuthorizerWithPolicyStore")
 }
 
 // NewAuthorizerWithPolicyStore is the component constructor used by infer.Component.
@@ -96,10 +96,10 @@ func NewAuthorizerWithPolicyStore(
     }
 
     // 1b) DynamoDB single-table for tenants/users/roles
-    // Removal policy (retain on delete) only when NOT ephemeral
-    tableOpts := opts
+    // Always parent to the component; retain on delete only when NOT ephemeral
+    tableOpt := pulumi.MergeResourceOptions(childOpts...)
     if !*args.IsEphemeral {
-        tableOpts = pulumi.MergeResourceOptions(opts, pulumi.RetainOnDelete(true))
+        tableOpt = pulumi.MergeResourceOptions(tableOpt, pulumi.RetainOnDelete(true))
     }
 
     // Build base table args
@@ -145,7 +145,7 @@ func NewAuthorizerWithPolicyStore(
         targs.StreamViewType = pulumi.StringPtr("NEW_AND_OLD_IMAGES")
     }
 
-    table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-tenant", name), targs, tableOpts)
+    table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-tenant", name), targs, tableOpt)
     if err != nil {
         return nil, err
     }
@@ -246,7 +246,7 @@ func NewAuthorizerWithPolicyStore(
     }
 
     // 3) Lambda code: embed built authorizer
-    code := pulumi.NewAssetArchive(map[string]interface{}{
+    code := pulumi.NewAssetArchive(map[string]pulumi.AssetOrArchive{
         "index.mjs": pulumi.NewStringAsset(authorizerIndexMjs),
     })
 
@@ -275,7 +275,7 @@ func NewAuthorizerWithPolicyStore(
 
     // 4) Log group
     if _, err = awscloudwatch.NewLogGroup(ctx, fmt.Sprintf("%s-lg", name), &awscloudwatch.LogGroupArgs{
-        Name:            fn.Name.ApplyT(func(n string) (string, error) { return "/aws/lambda/" + n, nil }).(pulumi.StringOutput),
+        Name:            fn.Name.ApplyT(func(n string) string { return "/aws/lambda/" + n }).(pulumi.StringOutput).ToStringPtrOutput(),
         RetentionInDays: pulumi.IntPtr(14),
     }, childOpts...); err != nil {
         return nil, err

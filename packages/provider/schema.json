@@ -40,6 +40,13 @@
           "plain": true,
           "default": false
         },
+        "lambdaEnvironment": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Additional environment variables for the Lambda authorizer"
+        },
         "validationMode": {
           "type": "string",
           "enum": [
@@ -48,13 +55,6 @@
           ],
           "plain": true,
           "deprecationMessage": "No longer configurable; mode is always STRICT and this value is ignored."
-        },
-        "lambdaEnvironment": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Additional environment variables for the Lambda authorizer"
         }
       },
       "requiredInputs": [],

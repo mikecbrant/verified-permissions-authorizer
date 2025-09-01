@@ -55,11 +55,11 @@
             }
           }
         },
-        "isEphemeral": {
+        "retainOnDelete": {
           "type": "boolean",
-          "description": "If true, treat the deployment stage as ephemeral (destroy resources on stack removal)",
+          "description": "When true, resources are retained on delete and protected from deletion where supported (e.g., Cognito User Pool deletion protection).",
           "plain": true,
-          "default": false
+          "default": true
         },
         "cognito": {
           "type": "object",

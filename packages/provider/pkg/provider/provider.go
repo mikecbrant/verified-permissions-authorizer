@@ -35,8 +35,8 @@ func NewProvider() (p.Provider, error) {
 type AuthorizerArgs struct {
     // Policy store description
     Description *string `pulumi:"description,optional"`
-    // If true, treat the stage as ephemeral: destroy resources on stack removal (no retention).
-    IsEphemeral *bool `pulumi:"isEphemeral,optional"`
+    // When true, resources are retained on delete and protected from deletion (where supported).
+    RetainOnDelete *bool `pulumi:"retainOnDelete,optional"`
     // DynamoDB-related options for the provider-managed tenant table.
     Dynamo *DynamoConfig `pulumi:"dynamo,optional"`
     // Settings for the bundled Lambda authorizer
@@ -101,9 +101,9 @@ func NewAuthorizerWithPolicyStore(
     }
 
     // Defaults for provider-level options
-    if args.IsEphemeral == nil {
-        b := false
-        args.IsEphemeral = &b
+    if args.RetainOnDelete == nil {
+        b := true
+        args.RetainOnDelete = &b
     }
     // normalize nested config pointers
     if args.Dynamo == nil {
@@ -120,9 +120,9 @@ func NewAuthorizerWithPolicyStore(
         storeArgs.Description = pulumi.StringPtr(*args.Description)
     }
     childOpts := append(opts, pulumi.Parent(comp))
-    // Apply RetainOnDelete to all child resources when NOT ephemeral
+    // Apply RetainOnDelete to all child resources when retention is enabled
     retOpts := pulumi.MergeResourceOptions(childOpts...)
-    if !*args.IsEphemeral {
+    if *args.RetainOnDelete {
         retOpts = pulumi.MergeResourceOptions(retOpts, pulumi.RetainOnDelete(true))
     }
     store, err := awsvp.NewPolicyStore(ctx, fmt.Sprintf("%s-store", name), storeArgs, retOpts)
@@ -131,7 +131,7 @@ func NewAuthorizerWithPolicyStore(
     }
 
     // 1b) DynamoDB single-table for tenants/users/roles
-    // Always parent to the component; retain on delete only when NOT ephemeral
+    // Always parent to the component; retain on delete only when retention is enabled
     tableOpt := retOpts
 
     // Build base table args
@@ -165,8 +165,8 @@ func NewAuthorizerWithPolicyStore(
         },
     }
 
-    // For retained (non-ephemeral) stages enable deletion protection and PITR
-    if !*args.IsEphemeral {
+    // When retention is enabled, turn on deletion protection and PITR
+    if *args.RetainOnDelete {
         targs.DeletionProtectionEnabled = pulumi.BoolPtr(true)
         targs.PointInTimeRecovery = &awsdynamodb.TablePointInTimeRecoveryArgs{ Enabled: pulumi.Bool(true) }
     }
@@ -368,7 +368,7 @@ func NewAuthorizerWithPolicyStore(
 
     // 5) Optional Cognito provisioning + Verified Permissions identity source
     if args.Cognito != nil {
-        cog, err := provisionCognito(ctx, name, store, *args.Cognito, *args.IsEphemeral, retOpts)
+        cog, err := provisionCognito(ctx, name, store, *args.Cognito, *args.RetainOnDelete, retOpts)
         if err != nil {
             return nil, err
         }
@@ -410,7 +410,7 @@ func provisionCognito(
     name string,
     store *awsvp.PolicyStore,
     cfg CognitoConfig,
-    isEphemeral bool,
+    retainOnDelete bool,
     opts pulumi.ResourceOption,
 ) (*cognitoProvisionResult, error) {
     // Construct minimal Cognito user pool args
@@ -420,10 +420,10 @@ func provisionCognito(
             CaseSensitive: pulumi.Bool(false),
         },
         DeletionProtection: pulumi.String(func() string {
-            if isEphemeral {
-                return "INACTIVE"
+            if retainOnDelete {
+                return "ACTIVE"
             }
-            return "ACTIVE"
+            return "INACTIVE"
         }()),
     }
     // Map sign-in aliases (default to email when none provided)

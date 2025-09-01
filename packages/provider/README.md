@@ -10,7 +10,7 @@ Interface (stable)
 - Resource token: `verified-permissions-authorizer:index:AuthorizerWithPolicyStore`
 - Inputs:
   - `description?`
-  - `isEphemeral?` (boolean, default `false`) — when `false`, the DynamoDB table is retained-on-delete and Cognito deletion protection is enabled
+  - `retainOnDelete?` (boolean, default `true`) — when `true`, resources are retained on delete and protected where supported (e.g., Cognito User Pool deletion protection). When `false`, resources are fully destroyable.
   - `lambda?` — settings for the bundled Lambda authorizer
     - `memorySize?` (MB; default `128`)
     - `reservedConcurrency?` (default `1`)
@@ -42,7 +42,7 @@ Verified Permissions identity source
 - When `cognito` is supplied, an `aws.verifiedpermissions.IdentitySource` is created pointing at the provisioned User Pool and its client IDs.
 
 Retention / deletion semantics
-- Controlled by `isEphemeral`: if `false`, resources use retain-on-delete and the User Pool has deletion protection enabled; if `true`, resources are fully destroyable and deletion protection is disabled.
+- Controlled by `retainOnDelete`: when `true`, resources use retain-on-delete and the User Pool has deletion protection enabled; when `false`, resources are fully destroyable and deletion protection is disabled.
 
 Publishing
 - The provider schema (`packages/provider/schema.json`) is published to the Pulumi Registry.

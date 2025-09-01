@@ -18,7 +18,7 @@ type DynamoConfig = {
 
 type AuthorizerWithPolicyStoreArgs = {
   description?: pulumi.Input<string>
-  isEphemeral?: pulumi.Input<boolean>
+  retainOnDelete?: pulumi.Input<boolean>
   lambda?: pulumi.Input<LambdaConfig>
   dynamo?: pulumi.Input<DynamoConfig>
   cognito?: pulumi.Input<CognitoConfig>

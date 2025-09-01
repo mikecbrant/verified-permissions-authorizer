@@ -4,7 +4,7 @@ This is a multi-language Pulumi Component Provider implemented in Go. It provisi
 
 - An AWS Verified Permissions Policy Store
 - An AWS Lambda Request Authorizer whose code is bundled from the sibling TypeScript package at `packages/lambda-authorizer`
-- Optionally, an AWS Cognito User Pool (plus triggers, domain, and Identity Pool) and configures it as the Verified Permissions identity source
+- Optionally, an AWS Cognito User Pool (domain and Identity Pool) and configures it as the Verified Permissions identity source
 
 Interface (stable)
 - Resource token: `verified-permissions-authorizer:index:AuthorizerWithPolicyStore`

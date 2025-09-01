@@ -4,24 +4,24 @@ This is a multi-language Pulumi Component Provider implemented in Go. It provisi
 
 - An AWS Verified Permissions Policy Store
 - An AWS Lambda Request Authorizer whose code is bundled from the sibling TypeScript package at `packages/lambda-authorizer`
+- Optionally, an AWS Cognito User Pool (domain and Identity Pool) and configures it as the Verified Permissions identity source
 
 Interface (stable)
 - Resource token: `verified-permissions-authorizer:index:AuthorizerWithPolicyStore`
-- Inputs: `description?`, `lambdaEnvironment?` (map<string,string>), `enableDynamoDbStream?` (boolean, default `false`), `isEphemeral?` (boolean, default `false`)
-- Outputs: `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `AuthTableArn`, `AuthTableStreamArn?`
-
-
-
-## DynamoDB auth table
-- Keys/attributes: `PK` (hash), `SK` (range), `GSI1PK` (hash), `GSI1SK` (range), `GSI2PK` (hash), `GSI2SK` (range)
-- GSIs: `GSI1` and `GSI2` (ProjectionType `ALL`)
-- Billing mode: `PAY_PER_REQUEST`
-- Stream behavior (controlled by `enableDynamoDbStream`):
-  - `true`: stream enabled with `NEW_AND_OLD_IMAGES`; `AuthTableStreamArn` is set
-  - `false`: stream disabled; `AuthTableStreamArn` is not set
-- Retention semantics (controlled by `isEphemeral`):
-  - Non‑ephemeral (`false` or unset): table is retained on stack deletion
-  - Ephemeral (`true`): table is not retained on deletion
+- Inputs:
+  - `description?`
+  - `retainOnDelete?` (boolean, default `false`) — when `true`, resources are retained on delete and protected where supported (e.g., Cognito User Pool deletion protection). When `false`, resources are fully destroyable.
+  - `lambda?` — settings for the bundled Lambda authorizer
+    - `memorySize?` (MB; default `128`)
+    - `reservedConcurrency?` (default `1`)
+    - `provisionedConcurrency?` (units; default `0` to disable)
+  - `dynamo?` — DynamoDB-related options for the provider-managed tenant table
+    - `enableDynamoDbStream?` (boolean, default `false`)
+  - `cognito?` — provision a Cognito User Pool and set it as the Verified Permissions identity source
+    - `signInAliases?` — array of allowed values: `email`, `phone`, `preferredUsername` (default: `["email"]`). `username` is intentionally not supported.
+- Outputs:
+  - `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `TenantTableArn`, `TenantTableStreamArn?`
+  - When Cognito is provisioned: `userPoolId`, `userPoolArn`, `userPoolDomain`, `identityPoolId?`, `authRoleArn?`, `unauthRoleArn?`, `userPoolClientIds[]`, `parameters` (includes `USER_POOL_ID`)
 
 Lambda contract (fixed)
 - Runtime: `nodejs22.x` (not configurable)
@@ -29,7 +29,7 @@ Lambda contract (fixed)
 - Environment: includes `POLICY_STORE_ID` and `JWT_SECRET` (used to verify incoming JWTs; default algorithms allowlist is `HS256`).
 
 IAM permissions
-- The Lambda execution role is granted `verifiedpermissions:GetPolicyStore` and `verifiedpermissions:IsAuthorized`.
+- The Lambda execution role is granted `verifiedpermissions:GetPolicyStore` and `verifiedpermissions:IsAuthorized`, scoped to the created Policy Store ARN (no wildcard resource).
 
 Tight coupling to the Lambda package
 - The provider embeds the compiled authorizer (`packages/lambda-authorizer/dist/index.mjs`) at build time via `go:embed`.
@@ -37,7 +37,12 @@ Tight coupling to the Lambda package
 
 Schema
 - The provider schema is `packages/provider/schema.json`.
-- It is maintained alongside the Go provider; no YAML conversion step is required.
+
+Verified Permissions identity source
+- When `cognito` is supplied, an `aws.verifiedpermissions.IdentitySource` is created pointing at the provisioned User Pool and its client IDs.
+
+Retention / deletion semantics
+- Controlled by `retainOnDelete`: when `true`, resources use retain-on-delete and the User Pool has deletion protection enabled; when `false`, resources are fully destroyable and deletion protection is disabled.
 
 Publishing
 - The provider schema (`packages/provider/schema.json`) is published to the Pulumi Registry.

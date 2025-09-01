@@ -22,24 +22,56 @@
           "description": "Policy store description",
           "plain": true
         },
-        "enableDynamoDbStream": {
-          "type": "boolean",
-          "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the auth table",
-          "plain": true,
-          "default": false
-        },
-        "isEphemeral": {
-          "type": "boolean",
-          "description": "If true, treat the deployment stage as ephemeral (destroy resources on stack removal)",
-          "plain": true,
-          "default": false
-        },
-        "lambdaEnvironment": {
+        "lambda": {
           "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Additional environment variables for the Lambda authorizer"
+          "description": "Settings for the bundled Lambda authorizer.",
+          "properties": {
+            "memorySize": {
+              "type": "integer",
+              "description": "Memory size for the Lambda function in MB.",
+              "default": 128
+            },
+            "reservedConcurrency": {
+              "type": "integer",
+              "description": "Reserved concurrency limit for the Lambda function.",
+              "default": 1
+            },
+            "provisionedConcurrency": {
+              "type": "integer",
+              "description": "Provisioned concurrency units for the Lambda function (0 disables).",
+              "default": 0
+            }
+          }
+        },
+        "dynamo": {
+          "type": "object",
+          "description": "DynamoDB tenant table options.",
+          "properties": {
+            "enableDynamoDbStream": {
+              "type": "boolean",
+              "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the tenant table",
+              "plain": true,
+              "default": false
+            }
+          }
+        },
+        "retainOnDelete": {
+          "type": "boolean",
+          "description": "When true, resources are retained on delete and protected from deletion where supported (e.g., Cognito User Pool deletion protection).",
+          "plain": true,
+          "default": false
+        },
+        "cognito": {
+          "type": "object",
+          "description": "Provision an AWS Cognito User Pool and configure it as the Verified Permissions identity source.",
+          "properties": {
+            "signInAliases": {
+              "type": "array",
+              "description": "Allowed sign-in identifiers for the User Pool.",
+              "items": { "type": "string", "enum": ["email", "phone", "preferredUsername"] },
+              "default": ["email"]
+            }
+          }
         }
       },
       "requiredInputs": [],
@@ -56,13 +88,22 @@
         "roleArn": {
           "type": "string"
         },
-        "AuthTableArn": {
+        "TenantTableArn": {
           "type": "string",
-          "description": "ARN of the DynamoDB auth table"
+          "description": "ARN of the DynamoDB tenant table"
         },
-        "AuthTableStreamArn": {
+        "TenantTableStreamArn": {
           "type": "string",
-          "description": "ARN of the DynamoDB auth table stream (when streams are enabled)"
+          "description": "ARN of the DynamoDB tenant table stream (when streams are enabled)"
+        },
+        "userPoolId": { "type": "string" },
+        "userPoolArn": { "type": "string" },
+        "userPoolDomain": { "type": "string" },
+        "identityPoolId": { "type": "string" },
+        "authRoleArn": { "type": "string" },
+        "unauthRoleArn": { "type": "string" },
+        "userPoolClientIds": { "type": "array", "items": { "type": "string" } },
+        "parameters": { "type": "object", "additionalProperties": { "type": "string" } }
         }
       }
     }

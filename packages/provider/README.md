@@ -10,12 +10,13 @@ Interface (stable)
 - Resource token: `verified-permissions-authorizer:index:AuthorizerWithPolicyStore`
 - Inputs:
   - `description?`
-  - `enableDynamoDbStream?` (boolean, default `false`)
   - `isEphemeral?` (boolean, default `false`) — when `false`, the DynamoDB table is retained-on-delete and Cognito deletion protection is enabled
-  - `authorizerLambda?` — settings for the bundled Lambda authorizer
+  - `lambda?` — settings for the bundled Lambda authorizer
     - `memorySize?` (MB; default `128`)
     - `reservedConcurrency?` (default `1`)
     - `provisionedConcurrency?` (units; default `0` to disable)
+  - `dynamo?` — DynamoDB-related options for the provider-managed tenant table
+    - `enableDynamoDbStream?` (boolean, default `false`)
   - `cognito?` — provision a Cognito User Pool and set it as the Verified Permissions identity source
     - `signInAliases?` — array of allowed values: `email`, `phone`, `preferredUsername` (default: `["email"]`). `username` is intentionally not supported.
 - Outputs:

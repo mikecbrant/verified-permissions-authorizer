@@ -6,17 +6,21 @@ type CognitoConfig = {
   signInAliases?: pulumi.Input<pulumi.Input<CognitoSignInAlias>[]>
 }
 
-type AuthorizerLambdaConfig = {
+type LambdaConfig = {
   memorySize?: pulumi.Input<number>
   reservedConcurrency?: pulumi.Input<number>
   provisionedConcurrency?: pulumi.Input<number>
 }
 
+type DynamoConfig = {
+  enableDynamoDbStream?: pulumi.Input<boolean>
+}
+
 type AuthorizerWithPolicyStoreArgs = {
   description?: pulumi.Input<string>
-  enableDynamoDbStream?: pulumi.Input<boolean>
   isEphemeral?: pulumi.Input<boolean>
-  authorizerLambda?: pulumi.Input<AuthorizerLambdaConfig>
+  lambda?: pulumi.Input<LambdaConfig>
+  dynamo?: pulumi.Input<DynamoConfig>
   cognito?: pulumi.Input<CognitoConfig>
 }
 
@@ -58,9 +62,10 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
 }
 
 export {
-  type AuthorizerLambdaConfig,
   AuthorizerWithPolicyStore,
   type AuthorizerWithPolicyStoreArgs,
   type CognitoConfig,
   type CognitoSignInAlias,
+  type DynamoConfig,
+  type LambdaConfig,
 }

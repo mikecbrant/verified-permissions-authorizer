@@ -37,20 +37,26 @@ type AuthorizerArgs struct {
     Description *string `pulumi:"description,optional"`
     // If true, treat the stage as ephemeral: destroy resources on stack removal (no retention).
     IsEphemeral *bool `pulumi:"isEphemeral,optional"`
-    // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
-    EnableDynamoDbStream *bool `pulumi:"enableDynamoDbStream,optional"`
+    // DynamoDB-related options for the provider-managed tenant table.
+    Dynamo *DynamoConfig `pulumi:"dynamo,optional"`
     // Settings for the bundled Lambda authorizer
-    AuthorizerLambda *AuthorizerLambdaConfig `pulumi:"authorizerLambda,optional"`
+    Lambda *LambdaConfig `pulumi:"lambda,optional"`
     // Optional Cognito configuration. When provided, a Cognito User Pool will be provisioned
     // and configured as the Verified Permissions Identity Source for the created policy store.
     Cognito *CognitoConfig `pulumi:"cognito,optional"`
 }
 
-// AuthorizerLambdaConfig exposes a narrow set of tuning knobs for the Lambda authorizer.
-type AuthorizerLambdaConfig struct {
+// LambdaConfig exposes a narrow set of tuning knobs for the Lambda authorizer.
+type LambdaConfig struct {
     MemorySize             *int `pulumi:"memorySize,optional"`
     ReservedConcurrency    *int `pulumi:"reservedConcurrency,optional"`
     ProvisionedConcurrency *int `pulumi:"provisionedConcurrency,optional"`
+}
+
+// DynamoConfig groups DynamoDB table-related provider options.
+type DynamoConfig struct {
+    // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
+    EnableDynamoDbStream *bool `pulumi:"enableDynamoDbStream,optional"`
 }
 
 // AuthorizerWithPolicyStore is the component implementing the Construct.
@@ -99,9 +105,9 @@ func NewAuthorizerWithPolicyStore(
         b := false
         args.IsEphemeral = &b
     }
-    if args.EnableDynamoDbStream == nil {
-        b := false
-        args.EnableDynamoDbStream = &b
+    // normalize nested config pointers
+    if args.Dynamo == nil {
+        args.Dynamo = &DynamoConfig{}
     }
 
     // 1) Verified Permissions Policy Store
@@ -166,7 +172,11 @@ func NewAuthorizerWithPolicyStore(
     }
 
     // Streams optional
-    if *args.EnableDynamoDbStream {
+    enableStream := false
+    if args.Dynamo != nil && args.Dynamo.EnableDynamoDbStream != nil {
+        enableStream = *args.Dynamo.EnableDynamoDbStream
+    }
+    if enableStream {
         targs.StreamEnabled = pulumi.BoolPtr(true)
         targs.StreamViewType = pulumi.StringPtr("NEW_AND_OLD_IMAGES")
     }
@@ -273,24 +283,24 @@ func NewAuthorizerWithPolicyStore(
     })
 
     // Defaults for authorizer Lambda config
-    if args.AuthorizerLambda == nil {
-        args.AuthorizerLambda = &AuthorizerLambdaConfig{}
+    if args.Lambda == nil {
+        args.Lambda = &LambdaConfig{}
     }
     mem := 128
-    if args.AuthorizerLambda.MemorySize != nil {
-        mem = *args.AuthorizerLambda.MemorySize
+    if args.Lambda.MemorySize != nil {
+        mem = *args.Lambda.MemorySize
     }
     rc := 1
-    if args.AuthorizerLambda.ReservedConcurrency != nil {
-        rc = *args.AuthorizerLambda.ReservedConcurrency
+    if args.Lambda.ReservedConcurrency != nil {
+        rc = *args.Lambda.ReservedConcurrency
     }
     pc := 0
-    if args.AuthorizerLambda.ProvisionedConcurrency != nil {
-        pc = *args.AuthorizerLambda.ProvisionedConcurrency
+    if args.Lambda.ProvisionedConcurrency != nil {
+        pc = *args.Lambda.ProvisionedConcurrency
     }
     // Guard: when provisioned concurrency is enabled, ensure it does not exceed reserved concurrency
     if pc > 0 && rc < pc {
-        return nil, fmt.Errorf("authorizerLambda.provisionedConcurrency (%d) must be less than or equal to reservedConcurrency (%d)", pc, rc)
+        return nil, fmt.Errorf("lambda.provisionedConcurrency (%d) must be less than or equal to reservedConcurrency (%d)", pc, rc)
     }
 
     fn, err := awslambda.NewFunction(ctx, fmt.Sprintf("%s-authorizer", name), &awslambda.FunctionArgs{
@@ -400,7 +410,7 @@ func provisionCognito(
     name string,
     store *awsvp.PolicyStore,
     cfg CognitoConfig,
-    ephemeral bool,
+    isEphemeral bool,
     opts pulumi.ResourceOption,
 ) (*cognitoProvisionResult, error) {
     // Construct minimal Cognito user pool args
@@ -410,7 +420,7 @@ func provisionCognito(
             CaseSensitive: pulumi.Bool(false),
         },
         DeletionProtection: pulumi.String(func() string {
-            if ephemeral {
+            if isEphemeral {
                 return "INACTIVE"
             }
             return "ACTIVE"

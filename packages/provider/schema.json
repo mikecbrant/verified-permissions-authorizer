@@ -22,7 +22,7 @@
           "description": "Policy store description",
           "plain": true
         },
-        "authorizerLambda": {
+        "lambda": {
           "type": "object",
           "description": "Settings for the bundled Lambda authorizer.",
           "properties": {
@@ -43,11 +43,17 @@
             }
           }
         },
-        "enableDynamoDbStream": {
-          "type": "boolean",
-          "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the tenant table",
-          "plain": true,
-          "default": false
+        "dynamo": {
+          "type": "object",
+          "description": "DynamoDB tenant table options.",
+          "properties": {
+            "enableDynamoDbStream": {
+              "type": "boolean",
+              "description": "If true, enable DynamoDB Streams (NEW_AND_OLD_IMAGES) on the tenant table",
+              "plain": true,
+              "default": false
+            }
+          }
         },
         "isEphemeral": {
           "type": "boolean",

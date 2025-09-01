@@ -59,7 +59,7 @@
           "type": "boolean",
           "description": "When true, resources are retained on delete and protected from deletion where supported (e.g., Cognito User Pool deletion protection).",
           "plain": true,
-          "default": true
+          "default": false
         },
         "cognito": {
           "type": "object",

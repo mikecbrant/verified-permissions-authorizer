@@ -10,7 +10,7 @@ Interface (stable)
 - Resource token: `verified-permissions-authorizer:index:AuthorizerWithPolicyStore`
 - Inputs:
   - `description?`
-  - `retainOnDelete?` (boolean, default `true`) — when `true`, resources are retained on delete and protected where supported (e.g., Cognito User Pool deletion protection). When `false`, resources are fully destroyable.
+  - `retainOnDelete?` (boolean, default `false`) — when `true`, resources are retained on delete and protected where supported (e.g., Cognito User Pool deletion protection). When `false`, resources are fully destroyable.
   - `lambda?` — settings for the bundled Lambda authorizer
     - `memorySize?` (MB; default `128`)
     - `reservedConcurrency?` (default `1`)
@@ -29,7 +29,7 @@ Lambda contract (fixed)
 - Environment: includes `POLICY_STORE_ID` and `JWT_SECRET` (used to verify incoming JWTs; default algorithms allowlist is `HS256`).
 
 IAM permissions
-- The Lambda execution role is granted `verifiedpermissions:GetPolicyStore` and `verifiedpermissions:IsAuthorized`.
+- The Lambda execution role is granted `verifiedpermissions:GetPolicyStore` and `verifiedpermissions:IsAuthorized`, scoped to the created Policy Store ARN (no wildcard resource).
 
 Tight coupling to the Lambda package
 - The provider embeds the compiled authorizer (`packages/lambda-authorizer/dist/index.mjs`) at build time via `go:embed`.

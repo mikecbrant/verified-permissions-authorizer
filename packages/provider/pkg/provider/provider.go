@@ -102,7 +102,7 @@ func NewAuthorizerWithPolicyStore(
 
     // Defaults for provider-level options
     if args.RetainOnDelete == nil {
-        b := true
+        b := false
         args.RetainOnDelete = &b
     }
     // normalize nested config pointers

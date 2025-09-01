@@ -10,9 +10,9 @@ Interface (stable)
 - Resource token: `verified-permissions-authorizer:index:AuthorizerWithPolicyStore`
 - Inputs:
   - `description?`
-  - `validationMode?` ("STRICT" | "OFF")
   - `lambdaEnvironment?` (map<string,string>)
-  - `isEphemeral?` (boolean) — when false, resources are retained on delete and Cognito deletion protection is enabled
+  - `enableDynamoDbStream?` (boolean, default `false`)
+  - `isEphemeral?` (boolean, default `false`) — when `false`, the DynamoDB table is retained-on-delete and Cognito deletion protection is enabled
   - `cognito?` — provision a Cognito User Pool and set it as the Verified Permissions identity source
     - `identityPoolFederation?` (boolean) — create a Cognito Identity Pool + default roles
     - `signInAliases?` (username, email, phone, preferredUsername)
@@ -22,12 +22,12 @@ Interface (stable)
     - `advancedSecurityMode?` ("OFF" | "AUDIT" | "ENFORCED")
     - `userInvitation?` and `userVerification?` templates
     - `customAttributes?` (booleans to include: globalRoles, tenantId, tenantName, userId)
-    - `domain?` ({ domainName, certificateArn }) — when `isEphemeral` is false a custom domain is created using the certificate; when true, a hosted domain with a `"<stack>-tenant"` prefix is created
+    - `domain?` ({ domainName, certificateArn }) — when `isEphemeral` is false a custom domain is created using the certificate; when true, a hosted domain with a `"<stack>-<name>-tenant"` prefix is created
     - `triggers?` (map<string, { enabled?, environment?, permissions[]? }>) — optional Cognito lifecycle Lambda triggers; each trigger deploys a minimal Node.js function by default
     - `clients?` — names of User Pool clients to create (if omitted, a single `default` client is created)
 - Outputs:
-  - `policyStoreId`, `policyStoreArn`, `functionArn`, `roleArn`
-  - When Cognito is provisioned: `userPoolId`, `userPoolDomain`, `identityPoolId?`, `authRoleArn?`, `unauthRoleArn?`, `userPoolClientIds[]`, `parameters` (includes `USER_POOL_ID`)
+  - `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `TenantTableArn`, `TenantTableStreamArn?`
+  - When Cognito is provisioned: `userPoolId`, `userPoolArn`, `userPoolDomain`, `identityPoolId?`, `authRoleArn?`, `unauthRoleArn?`, `userPoolClientIds[]`, `parameters` (includes `USER_POOL_ID`)
 
 Lambda contract (fixed)
 - Runtime: `nodejs22.x` (not configurable)

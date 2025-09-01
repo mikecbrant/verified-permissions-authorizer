@@ -3,12 +3,13 @@ package provider
 import (
     "embed"
     "fmt"
-    "strings"
     "regexp"
+    "strings"
 
-    awscognito "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cognito"
     aws "github.com/pulumi/pulumi-aws/sdk/v6/go/aws"
+    awscognito "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cognito"
     awscloudwatch "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudwatch"
+    awsdynamodb "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/dynamodb"
     awsiam "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
     awslambda "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/lambda"
     awsvp "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/verifiedpermissions"
@@ -17,17 +18,18 @@ import (
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-//go:embed ../../assets/index.mjs
+//go:embed assets/index.mjs
 var authorizerIndexMjs string
 
+// Cognito trigger stub (Node.js) used when lifecycle triggers are enabled
 //go:embed ../../assets/cognito-trigger-stub.mjs
 var cognitoTriggerStub string
 
 // NewProvider wires up the multi-language component provider surface.
 func NewProvider() (p.Provider, error) {
     return infer.NewProvider(infer.Options{
-        Components: []infer.Component{
-            infer.Component[*AuthorizerWithPolicyStore, AuthorizerArgs, AuthorizerResult](),
+        Components: []infer.InferredComponent{
+            infer.Component(NewAuthorizerWithPolicyStore),
         },
     })
 }
@@ -36,70 +38,139 @@ func NewProvider() (p.Provider, error) {
 type AuthorizerArgs struct {
     // Policy store description
     Description *string `pulumi:"description,optional"`
-    // Validation mode for the policy store: STRICT | OFF (default STRICT)
-    ValidationMode *string           `pulumi:"validationMode,optional"`
-    LambdaEnv      map[string]string `pulumi:"lambdaEnvironment,optional"`
-
-    // Global deployment behavior flag (mirrors VP-6 semantics):
-    // when true, resources are created without retention and deletion protection.
-    // when false, resources are retained on delete and user pools have deletion protection enabled.
+    LambdaEnv   map[string]string `pulumi:"lambdaEnvironment,optional"`
+    // If true, treat the stage as ephemeral: destroy resources on stack removal (no retention).
     IsEphemeral *bool `pulumi:"isEphemeral,optional"`
-
+    // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
+    EnableDynamoDbStream *bool `pulumi:"enableDynamoDbStream,optional"`
     // Optional Cognito configuration. When provided, a Cognito User Pool will be provisioned
     // and configured as the Verified Permissions Identity Source for the created policy store.
     Cognito *CognitoConfig `pulumi:"cognito,optional"`
 }
 
-// AuthorizerResult defines the outputs for the component resource.
-type AuthorizerResult struct {
-    PolicyStoreId  string `pulumi:"policyStoreId"`
-    PolicyStoreArn string `pulumi:"policyStoreArn"`
-    FunctionArn    string `pulumi:"functionArn"`
-    RoleArn        string `pulumi:"roleArn"`
-
-    // Cognito-related outputs (present when Cognito is provisioned)
-    UserPoolId       *string            `pulumi:"userPoolId,optional"`
-    UserPoolArn      *string            `pulumi:"userPoolArn,optional"`
-    UserPoolDomain   *string            `pulumi:"userPoolDomain,optional"`
-    IdentityPoolId   *string            `pulumi:"identityPoolId,optional"`
-    AuthRoleArn      *string            `pulumi:"authRoleArn,optional"`
-    UnauthRoleArn    *string            `pulumi:"unauthRoleArn,optional"`
-    UserPoolClientIds []string          `pulumi:"userPoolClientIds,optional"`
-    Parameters       map[string]string  `pulumi:"parameters,optional"`
-}
-
 // AuthorizerWithPolicyStore is the component implementing the Construct.
-type AuthorizerWithPolicyStore struct{}
+// It exposes the created resource ARNs as outputs.
+type AuthorizerWithPolicyStore struct {
+    pulumi.ResourceState
+
+    PolicyStoreId  pulumi.StringOutput `pulumi:"policyStoreId"`
+    PolicyStoreArn pulumi.StringOutput `pulumi:"policyStoreArn"`
+    // Renamed per review: functionArn -> authorizerFunctionArn
+    AuthorizerFunctionArn pulumi.StringOutput `pulumi:"authorizerFunctionArn"`
+    RoleArn        pulumi.StringOutput `pulumi:"roleArn"`
+    // DynamoDB table outputs (exported with PascalCase to match schema/docs)
+    TenantTableArn       pulumi.StringOutput    `pulumi:"TenantTableArn"`
+    TenantTableStreamArn pulumi.StringPtrOutput `pulumi:"TenantTableStreamArn,optional"`
+
+    // Optional Cognito-related outputs
+    UserPoolId        pulumi.StringPtrOutput   `pulumi:"userPoolId,optional"`
+    UserPoolArn       pulumi.StringPtrOutput   `pulumi:"userPoolArn,optional"`
+    UserPoolDomain    pulumi.StringPtrOutput   `pulumi:"userPoolDomain,optional"`
+    IdentityPoolId    pulumi.StringPtrOutput   `pulumi:"identityPoolId,optional"`
+    AuthRoleArn       pulumi.StringPtrOutput   `pulumi:"authRoleArn,optional"`
+    UnauthRoleArn     pulumi.StringPtrOutput   `pulumi:"unauthRoleArn,optional"`
+    UserPoolClientIds pulumi.StringArrayOutput `pulumi:"userPoolClientIds,optional"`
+    Parameters        pulumi.StringMapOutput   `pulumi:"parameters,optional"`
+}
 
 func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
     a.Describe(&c, "Provision an AWS Verified Permissions Policy Store and a bundled Lambda Request Authorizer.")
     a.Token(&c, "verified-permissions-authorizer:index:AuthorizerWithPolicyStore")
 }
 
-// Construct implements the component creation logic.
-func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, args AuthorizerArgs, opts pulumi.ResourceOption) (AuthorizerResult, error) {
-    var res AuthorizerResult
-    if args.ValidationMode == nil {
-        def := "STRICT"
-        args.ValidationMode = &def
+// NewAuthorizerWithPolicyStore is the component constructor used by infer.Component.
+func NewAuthorizerWithPolicyStore(
+    ctx *pulumi.Context,
+    name string,
+    args AuthorizerArgs,
+    opts ...pulumi.ResourceOption,
+) (*AuthorizerWithPolicyStore, error) {
+    comp := &AuthorizerWithPolicyStore{}
+    if err := ctx.RegisterComponentResource("verified-permissions-authorizer:index:AuthorizerWithPolicyStore", name, comp, opts...); err != nil {
+        return nil, err
     }
-    ephemeral := true
-    if args.IsEphemeral != nil {
-        ephemeral = *args.IsEphemeral
+
+    // Defaults for provider-level options
+    if args.IsEphemeral == nil {
+        b := false
+        args.IsEphemeral = &b
+    }
+    if args.EnableDynamoDbStream == nil {
+        b := false
+        args.EnableDynamoDbStream = &b
     }
 
     // 1) Verified Permissions Policy Store
     storeArgs := &awsvp.PolicyStoreArgs{
         ValidationSettings: awsvp.PolicyStoreValidationSettingsArgs{
-            Mode: pulumi.String(*args.ValidationMode),
+            // Fixed to STRICT per review; not configurable
+            Mode: pulumi.String("STRICT"),
         },
     }
     if args.Description != nil {
         storeArgs.Description = pulumi.StringPtr(*args.Description)
     }
-    store, err := awsvp.NewPolicyStore(ctx, fmt.Sprintf("%s-store", name), storeArgs, withRetention(opts, !ephemeral))
+    childOpts := append(opts, pulumi.Parent(comp))
+    // Apply RetainOnDelete to all child resources when NOT ephemeral
+    retOpts := pulumi.MergeResourceOptions(childOpts...)
+    if !*args.IsEphemeral {
+        retOpts = pulumi.MergeResourceOptions(retOpts, pulumi.RetainOnDelete(true))
+    }
+    store, err := awsvp.NewPolicyStore(ctx, fmt.Sprintf("%s-store", name), storeArgs, retOpts)
     if err != nil {
-        return res, err
+        return nil, err
+    }
+
+    // 1b) DynamoDB single-table for tenants/users/roles
+    // Always parent to the component; retain on delete only when NOT ephemeral
+    tableOpt := retOpts
+
+    // Build base table args
+    targs := &awsdynamodb.TableArgs{
+        BillingMode: pulumi.String("PAY_PER_REQUEST"),
+        // Only attributes participating in the primary index or GSIs may be declared here.
+        Attributes: awsdynamodb.TableAttributeArray{
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("PK"), Type: pulumi.String("S") },
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("SK"), Type: pulumi.String("S") },
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("GSI1PK"), Type: pulumi.String("S") },
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("GSI1SK"), Type: pulumi.String("S") },
+            // GSI2 attributes
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("GSI2PK"), Type: pulumi.String("S") },
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("GSI2SK"), Type: pulumi.String("S") },
+        },
+        HashKey:  pulumi.String("PK"),
+        RangeKey: pulumi.StringPtr("SK"),
+        GlobalSecondaryIndexes: awsdynamodb.TableGlobalSecondaryIndexArray{
+            awsdynamodb.TableGlobalSecondaryIndexArgs{
+                Name:           pulumi.String("GSI1"),
+                HashKey:        pulumi.String("GSI1PK"),
+                RangeKey:       pulumi.StringPtr("GSI1SK"),
+                ProjectionType: pulumi.StringPtr("ALL"),
+            },
+            awsdynamodb.TableGlobalSecondaryIndexArgs{
+                Name:           pulumi.String("GSI2"),
+                HashKey:        pulumi.String("GSI2PK"),
+                RangeKey:       pulumi.StringPtr("GSI2SK"),
+                ProjectionType: pulumi.StringPtr("ALL"),
+            },
+        },
+    }
+
+    // For retained (non-ephemeral) stages enable deletion protection and PITR
+    if !*args.IsEphemeral {
+        targs.DeletionProtectionEnabled = pulumi.BoolPtr(true)
+        targs.PointInTimeRecovery = &awsdynamodb.TablePointInTimeRecoveryArgs{ Enabled: pulumi.Bool(true) }
+    }
+
+    // Streams optional
+    if *args.EnableDynamoDbStream {
+        targs.StreamEnabled = pulumi.BoolPtr(true)
+        targs.StreamViewType = pulumi.StringPtr("NEW_AND_OLD_IMAGES")
+    }
+
+    table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-tenant", name), targs, tableOpt)
+    if err != nil {
+        return nil, err
     }
 
     // 2) IAM Role
@@ -110,7 +181,7 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
                     Actions: pulumi.StringArray{pulumi.String("sts:AssumeRole")},
                     Principals: awsiam.GetPolicyDocumentStatementPrincipalArray{
                         awsiam.GetPolicyDocumentStatementPrincipalArgs{
-                            Type: pulumi.String("Service"),
+                            Type:        pulumi.String("Service"),
                             Identifiers: pulumi.StringArray{pulumi.String("lambda.amazonaws.com")},
                         },
                     },
@@ -118,49 +189,79 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
             },
         }).Json(),
         Description: pulumi.StringPtr("Role for Verified Permissions Lambda Authorizer"),
-    }, withRetention(opts, !ephemeral))
+    }, retOpts)
     if err != nil {
-        return res, err
+        return nil, err
     }
 
     // Basic logs policy
-    _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-logs", name), &awsiam.RolePolicyAttachmentArgs{
+    if _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-logs", name), &awsiam.RolePolicyAttachmentArgs{
         Role:      role.Name,
         PolicyArn: pulumi.String(awsiam.ManagedPolicyAWSLambdaBasicExecutionRole),
-    }, withRetention(opts, !ephemeral))
-    if err != nil {
-        return res, err
+    }, retOpts); err != nil {
+        return nil, err
     }
 
-    // Verified Permissions access policy: GetPolicyStore + IsAuthorized
+    // Verified Permissions access policy: GetPolicyStore + IsAuthorized (scoped to this policy store)
+    vpDoc := awsiam.GetPolicyDocumentOutput(ctx, awsiam.GetPolicyDocumentOutputArgs{
+        Statements: awsiam.GetPolicyDocumentStatementArray{
+            awsiam.GetPolicyDocumentStatementArgs{
+                Effect:    pulumi.StringPtr("Allow"),
+                Actions:   pulumi.StringArray{pulumi.String("verifiedpermissions:GetPolicyStore"), pulumi.String("verifiedpermissions:IsAuthorized")},
+                Resources: pulumi.StringArray{store.Arn},
+            },
+        },
+    })
     vpPol, err := awsiam.NewPolicy(ctx, fmt.Sprintf("%s-vp", name), &awsiam.PolicyArgs{
-        Policy: pulumi.All(store.Arn).ApplyT(func(vals []interface{}) (string, error) {
-            arn := vals[0].(string)
-            return fmt.Sprintf(`{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "VerifiedPermissionsAccess",
-      "Effect": "Allow",
-      "Action": [
-        "verifiedpermissions:GetPolicyStore",
-        "verifiedpermissions:IsAuthorized"
-      ],
-      "Resource": "%s"
-    }
-  ]
-}`, arn), nil
-        }).(pulumi.StringOutput),
-    }, withRetention(opts, !ephemeral))
+        Policy: vpDoc.Json(),
+    }, retOpts)
     if err != nil {
-        return res, err
+        return nil, err
     }
-    _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-vp-attach", name), &awsiam.RolePolicyAttachmentArgs{
+    if _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-vp-attach", name), &awsiam.RolePolicyAttachmentArgs{
         Role:      role.Name,
         PolicyArn: vpPol.Arn,
-    }, withRetention(opts, !ephemeral))
-    if err != nil {
-        return res, err
+    }, retOpts); err != nil {
+        return nil, err
+    }
+
+    // Grant the Lambda role read-only access to the provider-managed DynamoDB table
+    // (table ARN and all index ARNs). Actions intentionally exclude any write or
+    // streams consumer permissions.
+    ddbReadDoc := awsiam.GetPolicyDocumentOutput(ctx, awsiam.GetPolicyDocumentOutputArgs{
+        Statements: awsiam.GetPolicyDocumentStatementArray{
+            // Table-only actions
+            awsiam.GetPolicyDocumentStatementArgs{
+                Effect: pulumi.StringPtr("Allow"),
+                Actions: pulumi.StringArray{
+                    pulumi.String("dynamodb:GetItem"),
+                    pulumi.String("dynamodb:BatchGetItem"),
+                    pulumi.String("dynamodb:DescribeTable"),
+                },
+                Resources: pulumi.StringArray{
+                    table.Arn,
+                },
+            },
+            // Actions that may target the table or its GSIs
+            awsiam.GetPolicyDocumentStatementArgs{
+                Effect: pulumi.StringPtr("Allow"),
+                Actions: pulumi.StringArray{
+                    pulumi.String("dynamodb:Query"),
+                    pulumi.String("dynamodb:Scan"),
+                },
+                Resources: pulumi.StringArray{
+                    table.Arn,
+                    pulumi.Sprintf("%s/index/*", table.Arn),
+                },
+            },
+        },
+    })
+
+    if _, err := awsiam.NewRolePolicy(ctx, fmt.Sprintf("%s-ddb-read", name), &awsiam.RolePolicyArgs{
+        Role:   role.Name,
+        Policy: ddbReadDoc.Json(),
+    }, retOpts); err != nil {
+        return nil, err
     }
 
     // 3) Lambda code: embed built authorizer
@@ -186,47 +287,47 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
         },
         Architectures: pulumi.StringArray{pulumi.String("arm64")},
         Timeout:       pulumi.Int(10),
-    }, withRetention(opts, !ephemeral))
+    }, retOpts)
     if err != nil {
-        return res, err
+        return nil, err
     }
 
     // 4) Log group
-    _, err = awscloudwatch.NewLogGroup(ctx, fmt.Sprintf("%s-lg", name), &awscloudwatch.LogGroupArgs{
-        Name:            fn.Name.ApplyT(func(n string) (string, error) { return "/aws/lambda/" + n, nil }).(pulumi.StringOutput),
+    if _, err = awscloudwatch.NewLogGroup(ctx, fmt.Sprintf("%s-lg", name), &awscloudwatch.LogGroupArgs{
+        Name:            fn.Name.ApplyT(func(n string) string { return "/aws/lambda/" + n }).(pulumi.StringOutput).ToStringPtrOutput(),
         RetentionInDays: pulumi.IntPtr(14),
-    }, withRetention(opts, !ephemeral))
-    if err != nil {
-        return res, err
+    }, retOpts); err != nil {
+        return nil, err
     }
 
-    outputs := map[string]any{
-        "policyStoreId":  store.ID(),
-        "policyStoreArn": store.Arn,
-        "functionArn":    fn.Arn,
-        "roleArn":        role.Arn,
-    }
+    // Wire base outputs
+    comp.PolicyStoreId = store.ID().ToStringOutput()
+    comp.PolicyStoreArn = store.Arn
+    comp.AuthorizerFunctionArn = fn.Arn
+    comp.RoleArn = role.Arn
+    comp.TenantTableArn = table.Arn
+    // StreamArn is only non-nil when streams are enabled on the table
+    comp.TenantTableStreamArn = table.StreamArn
 
     // 5) Optional Cognito provisioning + Verified Permissions identity source
     if args.Cognito != nil {
-        // Create the user pool
-        upRes, idpRes, err := provisionCognito(ctx, name, store, *args.Cognito, ephemeral, withRetention(opts, !ephemeral))
+        cog, idp, err := provisionCognito(ctx, name, store, *args.Cognito, *args.IsEphemeral, retOpts)
         if err != nil {
-            return res, err
+            return nil, err
         }
-        // Merge outputs
-        for k, v := range upRes {
-            outputs[k] = v
-        }
-        if idpRes != nil {
-            for k, v := range idpRes {
-                outputs[k] = v
-            }
+        comp.UserPoolId = cog.UserPoolId.ToStringPtrOutput()
+        comp.UserPoolArn = cog.UserPoolArn.ToStringPtrOutput()
+        comp.UserPoolDomain = cog.Domain
+        comp.UserPoolClientIds = cog.ClientIds
+        comp.Parameters = cog.Parameters
+        if idp != nil {
+            comp.IdentityPoolId = idp.IdentityPoolId.ToStringPtrOutput()
+            comp.AuthRoleArn = idp.AuthRoleArn.ToStringPtrOutput()
+            comp.UnauthRoleArn = idp.UnauthRoleArn.ToStringPtrOutput()
         }
     }
 
-    // Return outputs via infer.SetOutputs
-    return AuthorizerResult{}, infer.SetOutputs(outputs)
+    return comp, nil
 }
 
 // withRetention augments resource options with RetainOnDelete when retain==true.
@@ -323,9 +424,22 @@ type CognitoConfig struct {
     Clients []string `pulumi:"clients,optional"`
 }
 
+type cognitoProvisionResult struct {
+    UserPoolId  pulumi.StringOutput
+    UserPoolArn pulumi.StringOutput
+    Domain      pulumi.StringPtrOutput
+    ClientIds   pulumi.StringArrayOutput
+    Parameters  pulumi.StringMapOutput
+}
+
+type identityPoolProvisionResult struct {
+    IdentityPoolId pulumi.StringOutput
+    AuthRoleArn    pulumi.StringOutput
+    UnauthRoleArn  pulumi.StringOutput
+}
+
 // provisionCognito provisions a Cognito User Pool (and optional Identity Pool) and configures it
 // as the Identity Source for the given Verified Permissions policy store.
-// Returns: outputs, effective domain (if any), identity pool outputs (if any), error
 func provisionCognito(
     ctx *pulumi.Context,
     name string,
@@ -333,7 +447,7 @@ func provisionCognito(
     cfg CognitoConfig,
     ephemeral bool,
     opts pulumi.ResourceOption,
-) (map[string]any, map[string]any, error) {
+) (*cognitoProvisionResult, *identityPoolProvisionResult, error) {
     // Defaults
     emailAcct := "COGNITO_DEFAULT"
     if cfg.EmailSendingAccount != nil {
@@ -353,8 +467,8 @@ func provisionCognito(
     }
     // Construct Cognito user pool args
     upArgs := &awscognito.UserPoolArgs{
-        Name:                    pulumi.String(fmt.Sprintf("%s-up", name)),
-        MfaConfiguration:        pulumi.String(mfa),
+        Name:                     pulumi.String(fmt.Sprintf("%s-up", name)),
+        MfaConfiguration:         pulumi.String(mfa),
         SmsAuthenticationMessage: pulumi.StringPtr(mfaMsg),
         EmailConfiguration: &awscognito.UserPoolEmailConfigurationArgs{
             EmailSendingAccount: pulumi.StringPtr(emailAcct),
@@ -569,7 +683,9 @@ func provisionCognito(
             prefix = strings.ToLower(prefix)
             re := regexp.MustCompile(`[^a-z0-9-]`)
             prefix = re.ReplaceAllString(prefix, "-")
-            if len(prefix) > 63 { prefix = prefix[:63] }
+            if len(prefix) > 63 {
+                prefix = prefix[:63]
+            }
             d, err := awscognito.NewUserPoolDomain(ctx, fmt.Sprintf("%s-domain", name), &awscognito.UserPoolDomainArgs{
                 Domain:     pulumi.String(prefix),
                 UserPoolId: userPool.ID(),
@@ -617,7 +733,7 @@ func provisionCognito(
     }
 
     // Optional: Identity Pool + roles
-    var idpOutputs map[string]any
+    var idpOutputs *identityPoolProvisionResult
     if cfg.IdentityPoolFederation != nil && *cfg.IdentityPoolFederation {
         idpOutputs, err = provisionIdentityPool(ctx, name, userPool, clientIds, opts)
         if err != nil {
@@ -625,27 +741,18 @@ func provisionCognito(
         }
     }
 
-    // Collect outputs
-    outs := map[string]any{
-        "userPoolId":  userPool.ID(),
-        "userPoolArn": userPool.Arn,
-        "parameters":  pulumi.StringMap{ "USER_POOL_ID": userPool.ID().ToStringOutput() },
+    // Collect outputs (typed)
+    res := &cognitoProvisionResult{
+        UserPoolId:  userPool.ID().ToStringOutput(),
+        UserPoolArn: userPool.Arn,
+        ClientIds:   pulumi.ToStringArrayOutput(pulumi.StringArray(clientIds)),
+        Parameters:  (pulumi.StringMap{"USER_POOL_ID": userPool.ID().ToStringOutput()}).ToStringMapOutput(),
     }
     if domainOut != (pulumi.StringOutput{}) {
-        outs["userPoolDomain"] = domainOut
+        res.Domain = domainOut.ToStringPtrOutput()
     }
-    // Convert clientIds []StringInput -> []string output using Apply
-    outs["userPoolClientIds"] = pulumi.All(clientIds...).ApplyT(func(vals []interface{}) []string {
-        res := make([]string, 0, len(vals))
-        for _, v := range vals {
-            if s, ok := v.(string); ok {
-                res = append(res, s)
-            }
-        }
-        return res
-    })
 
-    return outs, idpOutputs, nil
+    return res, idpOutputs, nil
 }
 
 // ensureSmsRole creates an IAM role usable by Cognito to publish SMS via SNS.
@@ -727,7 +834,9 @@ func newCognitoTriggerLambda(ctx *pulumi.Context, name string, cfg TriggerConfig
     if len(cfg.Permissions) > 0 {
         polDoc := "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [{ \"Effect\": \"Allow\", \"Action\": ["
         for i, a := range cfg.Permissions {
-            if i > 0 { polDoc += "," }
+            if i > 0 {
+                polDoc += ","
+            }
             polDoc += fmt.Sprintf("\"%s\"", a)
         }
         polDoc += "], \"Resource\": \"*\" }]\n}"
@@ -779,7 +888,7 @@ func provisionIdentityPool(
     userPool *awscognito.UserPool,
     clientIds []pulumi.StringInput,
     opts pulumi.ResourceOption,
-) (map[string]any, error) {
+) (*identityPoolProvisionResult, error) {
     region, _ := aws.GetRegion(ctx, &aws.GetRegionArgs{}, nil)
     // Build provider name of user pool for identity pool mapping
     providerName := pulumi.Sprintf("cognito-idp.%s.amazonaws.com/%s", region.Name, userPool.ID())
@@ -872,10 +981,10 @@ func provisionIdentityPool(
         return nil, err
     }
 
-    return map[string]any{
-        "identityPoolId": ip.ID(),
-        "authRoleArn":    authRole.Arn,
-        "unauthRoleArn":  unauthRole.Arn,
+    return &identityPoolProvisionResult{
+        IdentityPoolId: ip.ID().ToStringOutput(),
+        AuthRoleArn:    authRole.Arn,
+        UnauthRoleArn:  unauthRole.Arn,
     }, nil
 }
 

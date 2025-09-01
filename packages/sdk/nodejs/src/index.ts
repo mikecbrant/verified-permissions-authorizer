@@ -72,21 +72,39 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
     );
     const get = (n: string): pulumi.Output<any> =>
       (this as any).getOutput(n) as pulumi.Output<any>;
-    const getFirst = <T>(...names: string[]): pulumi.Output<T> =>
-      pulumi.all(names.map((n) => get(n))).apply((vals) => {
-        for (const v of vals) {
-          if (v !== undefined) return v as T;
-        }
-        return undefined as unknown as T;
-      }) as pulumi.Output<T>;
+    const getFirstOrThrow = <T>(...names: string[]): pulumi.Output<T> =>
+      pulumi
+        .all(names.map((n) => get(n)))
+        .apply((vals) => {
+          for (const v of vals) {
+            if (v !== undefined && v !== null) return v as T;
+          }
+          throw new Error(
+            `None of the expected outputs were set: ${names.join(", ")}`,
+          );
+        }) as pulumi.Output<T>;
+    const getFirstOptional = <T>(
+      ...names: string[]
+    ): pulumi.Output<T | undefined> =>
+      pulumi
+        .all(names.map((n) => get(n)))
+        .apply((vals) => {
+          for (const v of vals) {
+            if (v !== undefined && v !== null) return v as T;
+          }
+          return undefined;
+        }) as pulumi.Output<T | undefined>;
     this.policyStoreId = get("policyStoreId") as pulumi.Output<string>;
     this.policyStoreArn = get("policyStoreArn") as pulumi.Output<string>;
     this.authorizerFunctionArn = get(
       "authorizerFunctionArn",
     ) as pulumi.Output<string>;
     this.roleArn = get("roleArn") as pulumi.Output<string>;
-    this.AuthTableArn = getFirst<string>("AuthTableArn", "TenantTableArn");
-    this.AuthTableStreamArn = getFirst<string | undefined>(
+    this.AuthTableArn = getFirstOrThrow<string>(
+      "AuthTableArn",
+      "TenantTableArn",
+    );
+    this.AuthTableStreamArn = getFirstOptional<string>(
       "AuthTableStreamArn",
       "TenantTableStreamArn",
     );

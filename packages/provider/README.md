@@ -26,6 +26,9 @@ Interface (stable)
       - `configurationSet` (string, optional)
 - Outputs:
   - `policyStoreId`, `policyStoreArn`, `authorizerFunctionArn`, `roleArn`, `AuthTableArn`, `AuthTableStreamArn?`
+
+Breaking change
+- Deprecated DynamoDB table output aliases have been removed. Use `AuthTableArn` and `AuthTableStreamArn`.
   - When Cognito is provisioned: `userPoolId`, `userPoolArn`, `userPoolDomain`, `identityPoolId?`, `authRoleArn?`, `unauthRoleArn?`, `userPoolClientIds[]`, `parameters` (includes `USER_POOL_ID`)
 
 Lambda contract (fixed)

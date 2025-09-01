@@ -1,7 +1,7 @@
 package provider
 
 import (
-    "embed"
+    _ "embed"
     "fmt"
 
     awscloudwatch "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cloudwatch"
@@ -13,16 +13,16 @@ import (
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-//go:embed ../../assets/index.mjs
+//go:embed assets/index.mjs
 var authorizerIndexMjs string
 
 // NewProvider wires up the multi-language component provider surface.
 func NewProvider() (p.Provider, error) {
-    return infer.NewProvider(infer.Options{
-        Components: []infer.Component{
-            infer.Component[*AuthorizerWithPolicyStore, AuthorizerArgs, AuthorizerResult](),
+    return infer.Provider(infer.Options{
+        Components: []infer.InferredComponent{
+            infer.Component(NewAuthorizerWithPolicyStore),
         },
-    })
+    }), nil
 }
 
 // AuthorizerArgs defines the inputs for the component resource.
@@ -34,25 +34,35 @@ type AuthorizerArgs struct {
     LambdaEnv      map[string]string `pulumi:"lambdaEnvironment,optional"`
 }
 
-// AuthorizerResult defines the outputs for the component resource.
-type AuthorizerResult struct {
-    PolicyStoreId  string `pulumi:"policyStoreId"`
-    PolicyStoreArn string `pulumi:"policyStoreArn"`
-    FunctionArn    string `pulumi:"functionArn"`
-    RoleArn        string `pulumi:"roleArn"`
-}
-
 // AuthorizerWithPolicyStore is the component implementing the Construct.
-type AuthorizerWithPolicyStore struct{}
+// It exposes the created resource ARNs as outputs.
+type AuthorizerWithPolicyStore struct {
+    pulumi.ResourceState
+
+    PolicyStoreId  pulumi.StringOutput `pulumi:"policyStoreId"`
+    PolicyStoreArn pulumi.StringOutput `pulumi:"policyStoreArn"`
+    FunctionArn    pulumi.StringOutput `pulumi:"functionArn"`
+    RoleArn        pulumi.StringOutput `pulumi:"roleArn"`
+}
 
 func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
     a.Describe(&c, "Provision an AWS Verified Permissions Policy Store and a bundled Lambda Request Authorizer.")
-    a.Token(&c, "verified-permissions-authorizer:index:AuthorizerWithPolicyStore")
+    a.SetToken("index", "AuthorizerWithPolicyStore")
 }
 
-// Construct implements the component creation logic.
-func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, args AuthorizerArgs, opts pulumi.ResourceOption) (AuthorizerResult, error) {
-    var res AuthorizerResult
+// NewAuthorizerWithPolicyStore is the component constructor used by infer.Component.
+func NewAuthorizerWithPolicyStore(
+    ctx *pulumi.Context,
+    name string,
+    args AuthorizerArgs,
+    opts ...pulumi.ResourceOption,
+) (*AuthorizerWithPolicyStore, error) {
+    comp := &AuthorizerWithPolicyStore{}
+    if err := ctx.RegisterComponentResource("verified-permissions-authorizer:index:AuthorizerWithPolicyStore", name, comp, opts...); err != nil {
+        return nil, err
+    }
+
+    // Defaults
     if args.ValidationMode == nil {
         def := "STRICT"
         args.ValidationMode = &def
@@ -67,39 +77,39 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
     if args.Description != nil {
         storeArgs.Description = pulumi.StringPtr(*args.Description)
     }
-    store, err := awsvp.NewPolicyStore(ctx, fmt.Sprintf("%s-store", name), storeArgs, opts)
+    childOpts := append(opts, pulumi.Parent(comp))
+    store, err := awsvp.NewPolicyStore(ctx, fmt.Sprintf("%s-store", name), storeArgs, childOpts...)
     if err != nil {
-        return res, err
+        return nil, err
     }
 
     // 2) IAM Role
     role, err := awsiam.NewRole(ctx, fmt.Sprintf("%s-role", name), &awsiam.RoleArgs{
-        AssumeRolePolicy: pulumi.String(awsiam.GetPolicyDocumentOutput(ctx, awsiam.GetPolicyDocumentOutputArgs{
+        AssumeRolePolicy: awsiam.GetPolicyDocumentOutput(ctx, awsiam.GetPolicyDocumentOutputArgs{
             Statements: awsiam.GetPolicyDocumentStatementArray{
                 awsiam.GetPolicyDocumentStatementArgs{
                     Actions: pulumi.StringArray{pulumi.String("sts:AssumeRole")},
                     Principals: awsiam.GetPolicyDocumentStatementPrincipalArray{
                         awsiam.GetPolicyDocumentStatementPrincipalArgs{
-                            Type: pulumi.String("Service"),
+                            Type:        pulumi.String("Service"),
                             Identifiers: pulumi.StringArray{pulumi.String("lambda.amazonaws.com")},
                         },
                     },
                 },
             },
-        }).Json().ToStringOutput()),
+        }).Json(),
         Description: pulumi.StringPtr("Role for Verified Permissions Lambda Authorizer"),
-    }, opts)
+    }, childOpts...)
     if err != nil {
-        return res, err
+        return nil, err
     }
 
     // Basic logs policy
-    _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-logs", name), &awsiam.RolePolicyAttachmentArgs{
+    if _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-logs", name), &awsiam.RolePolicyAttachmentArgs{
         Role:      role.Name,
         PolicyArn: pulumi.String(awsiam.ManagedPolicyAWSLambdaBasicExecutionRole),
-    }, opts)
-    if err != nil {
-        return res, err
+    }, childOpts...); err != nil {
+        return nil, err
     }
 
     // Verified Permissions access policy: GetPolicyStore + IsAuthorized
@@ -118,20 +128,19 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
     }
   ]
 }`),
-    }, opts)
+    }, childOpts...)
     if err != nil {
-        return res, err
+        return nil, err
     }
-    _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-vp-attach", name), &awsiam.RolePolicyAttachmentArgs{
+    if _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-vp-attach", name), &awsiam.RolePolicyAttachmentArgs{
         Role:      role.Name,
         PolicyArn: vpPol.Arn,
-    }, opts)
-    if err != nil {
-        return res, err
+    }, childOpts...); err != nil {
+        return nil, err
     }
 
     // 3) Lambda code: embed built authorizer
-    code := pulumi.NewAssetArchive(map[string]pulumi.AssetOrArchive{
+    code := pulumi.NewAssetArchive(map[string]interface{}{
         "index.mjs": pulumi.NewStringAsset(authorizerIndexMjs),
     })
 
@@ -153,25 +162,24 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
         },
         Architectures: pulumi.StringArray{pulumi.String("arm64")},
         Timeout:       pulumi.Int(10),
-    }, opts)
+    }, childOpts...)
     if err != nil {
-        return res, err
+        return nil, err
     }
 
     // 4) Log group
-    _, err = awscloudwatch.NewLogGroup(ctx, fmt.Sprintf("%s-lg", name), &awscloudwatch.LogGroupArgs{
+    if _, err = awscloudwatch.NewLogGroup(ctx, fmt.Sprintf("%s-lg", name), &awscloudwatch.LogGroupArgs{
         Name:            fn.Name.ApplyT(func(n string) (string, error) { return "/aws/lambda/" + n, nil }).(pulumi.StringOutput),
         RetentionInDays: pulumi.IntPtr(14),
-    }, opts)
-    if err != nil {
-        return res, err
+    }, childOpts...); err != nil {
+        return nil, err
     }
 
-    // Return outputs via infer.SetOutputs
-    return AuthorizerResult{}, infer.SetOutputs(map[string]any{
-        "policyStoreId":  store.ID(),
-        "policyStoreArn": store.Arn,
-        "functionArn":    fn.Arn,
-        "roleArn":        role.Arn,
-    })
+    // Wire outputs
+    comp.PolicyStoreId = store.ID().ToStringOutput()
+    comp.PolicyStoreArn = store.Arn
+    comp.FunctionArn = fn.Arn
+    comp.RoleArn = role.Arn
+
+    return comp, nil
 }

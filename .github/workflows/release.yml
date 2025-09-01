@@ -137,8 +137,8 @@ jobs:
 
       - name: Copy built lambda into provider assets
         run: |
-          mkdir -p packages/provider/assets
-          cp packages/lambda-authorizer/dist/index.mjs packages/provider/assets/index.mjs
+          mkdir -p packages/provider/pkg/provider/assets
+          cp packages/lambda-authorizer/dist/index.mjs packages/provider/pkg/provider/assets/index.mjs
 
       - name: Setup Go
         uses: actions/setup-go@v5

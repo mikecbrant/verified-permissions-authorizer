@@ -32,14 +32,6 @@ Interface (stable)
     - `dynamo`: `{ AuthTableArn, AuthTableStreamArn? }`
     - `cognito` (when configured): `{ userPoolId?, userPoolArn?, userPoolClientIds?[] }`
 
-Breaking change
-- Outputs are now grouped under `cognito`, `dynamo`, and `lambda`. Legacy flat outputs were removed.
-  - Replace `authorizerFunctionArn` with `lambda.authorizerFunctionArn`.
-  - Replace `roleArn` (Lambda role) with `lambda.roleArn`.
-  - Replace `AuthTableArn`/`AuthTableStreamArn` with `dynamo.AuthTableArn`/`dynamo.AuthTableStreamArn`.
-  - Replace Cognito flat outputs (e.g., `userPoolId`) with `cognito.userPoolId` (and similar for the rest).
-  - `policyStoreId` and `policyStoreArn` remain top-level.
-
 Lambda contract (fixed)
 - Runtime: `nodejs22.x` (not configurable)
 - Handler: `index.handler`

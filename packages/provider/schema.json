@@ -17,31 +17,46 @@
     "verified-permissions-authorizer:index:AuthorizerWithPolicyStore": {
       "isComponent": true,
       "inputProperties": {
+        "cognito": {
+          "type": "object",
+          "description": "Provision an AWS Cognito User Pool and configure it as the Verified Permissions identity source.",
+          "properties": {
+            "sesConfig": {
+              "type": "object",
+              "description": "Optional: configure the User Pool to send email via Amazon SES (DEVELOPER). When provided, the pool's EmailConfiguration is set accordingly and a resource policy is attached to the SES identity authorizing the Cognito service principal scoped to this User Pool.",
+              "properties": {
+                "configurationSet": {
+                  "type": "string",
+                  "description": "Optional SES configuration set name"
+                },
+                "from": {
+                  "type": "string",
+                  "description": "From address. Must match the SES email identity or be within the SES domain identity."
+                },
+                "replyToEmail": {
+                  "type": "string",
+                  "description": "Optional Reply-To address"
+                },
+                "sourceArn": {
+                  "type": "string",
+                  "description": "SES identity ARN to send from. Example: arn:aws:ses:us-east-1:123456789012:identity/example.com",
+                  "pattern": "^arn:(aws|aws-us-gov|aws-cn):ses:[a-z0-9-]+:[0-9]{12}:identity/.+$"
+                }
+              },
+              "required": ["sourceArn", "from"]
+            },
+            "signInAliases": {
+              "type": "array",
+              "description": "Allowed sign-in identifiers for the User Pool.",
+              "items": { "type": "string", "enum": ["email", "phone", "preferredUsername"] },
+              "default": ["email"]
+            }
+          }
+        },
         "description": {
           "type": "string",
           "description": "Policy store description",
           "plain": true
-        },
-        "lambda": {
-          "type": "object",
-          "description": "Settings for the bundled Lambda authorizer.",
-          "properties": {
-            "memorySize": {
-              "type": "integer",
-              "description": "Memory size for the Lambda function in MB.",
-              "default": 128
-            },
-            "reservedConcurrency": {
-              "type": "integer",
-              "description": "Reserved concurrency limit for the Lambda function.",
-              "default": 1
-            },
-            "provisionedConcurrency": {
-              "type": "integer",
-              "description": "Provisioned concurrency units for the Lambda function (0 disables).",
-              "default": 0
-            }
-          }
         },
         "dynamo": {
           "type": "object",
@@ -55,63 +70,36 @@
             }
           }
         },
+        "lambda": {
+          "type": "object",
+          "description": "Settings for the bundled Lambda authorizer.",
+          "properties": {
+            "memorySize": {
+              "type": "integer",
+              "description": "Memory size for the Lambda function in MB.",
+              "default": 128
+            },
+            "provisionedConcurrency": {
+              "type": "integer",
+              "description": "Provisioned concurrency units for the Lambda function (0 disables).",
+              "default": 0
+            },
+            "reservedConcurrency": {
+              "type": "integer",
+              "description": "Reserved concurrency limit for the Lambda function.",
+              "default": 1
+            }
+          }
+        },
         "retainOnDelete": {
           "type": "boolean",
           "description": "When true, resources are retained on delete and protected from deletion where supported (e.g., Cognito User Pool deletion protection).",
           "plain": true,
           "default": false
-        },
-        "cognito": {
-          "type": "object",
-          "description": "Provision an AWS Cognito User Pool and configure it as the Verified Permissions identity source.",
-          "properties": {
-            "signInAliases": {
-              "type": "array",
-              "description": "Allowed sign-in identifiers for the User Pool.",
-              "items": { "type": "string", "enum": ["email", "phone", "preferredUsername"] },
-              "default": ["email"]
-            },
-            "sesConfig": {
-              "type": "object",
-              "description": "Optional: configure the User Pool to send email via Amazon SES (DEVELOPER). When provided, the pool's EmailConfiguration is set accordingly and a resource policy is attached to the SES identity authorizing the Cognito service principal scoped to this User Pool.",
-              "properties": {
-                "sourceArn": {
-                  "type": "string",
-                  "description": "SES identity ARN to send from. Example: arn:aws:ses:us-east-1:123456789012:identity/example.com",
-                  "pattern": "^arn:(aws|aws-us-gov|aws-cn):ses:[a-z0-9-]+:[0-9]{12}:identity/.+$"
-                },
-                "from": {
-                  "type": "string",
-                  "description": "From address. Must match the SES email identity or be within the SES domain identity."
-                },
-                "replyToEmail": {
-                  "type": "string",
-                  "description": "Optional Reply-To address"
-                },
-                "configurationSet": {
-                  "type": "string",
-                  "description": "Optional SES configuration set name"
-                }
-              },
-              "required": ["sourceArn", "from"]
-            }
-          }
         }
       },
       "requiredInputs": [],
       "properties": {
-        "policyStoreId": {
-          "type": "string"
-        },
-        "policyStoreArn": {
-          "type": "string"
-        },
-        "authorizerFunctionArn": {
-          "type": "string"
-        },
-        "roleArn": {
-          "type": "string"
-        },
         "TenantTableArn": {
           "type": "string",
           "description": "ARN of the DynamoDB tenant table"
@@ -120,15 +108,18 @@
           "type": "string",
           "description": "ARN of the DynamoDB tenant table stream (when streams are enabled)"
         },
-        "userPoolId": { "type": "string" },
-        "userPoolArn": { "type": "string" },
-        "userPoolDomain": { "type": "string" },
-        "identityPoolId": { "type": "string" },
         "authRoleArn": { "type": "string" },
+        "authorizerFunctionArn": { "type": "string" },
+        "identityPoolId": { "type": "string" },
+        "parameters": { "type": "object", "additionalProperties": { "type": "string" } },
+        "policyStoreArn": { "type": "string" },
+        "policyStoreId": { "type": "string" },
+        "roleArn": { "type": "string" },
         "unauthRoleArn": { "type": "string" },
+        "userPoolArn": { "type": "string" },
         "userPoolClientIds": { "type": "array", "items": { "type": "string" } },
-        "parameters": { "type": "object", "additionalProperties": { "type": "string" } }
-        }
+        "userPoolDomain": { "type": "string" },
+        "userPoolId": { "type": "string" }
       }
     }
   }

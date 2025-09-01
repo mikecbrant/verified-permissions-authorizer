@@ -1,3 +1,7 @@
+/**
+ * This file is a small, hand-authored Node.js SDK wrapper for the Go component provider.
+ * It is not code-generated. Keep the args/types and output names in sync with the provider schema.
+ */
 import * as pulumi from "@pulumi/pulumi";
 
 type CognitoSignInAlias = "email" | "phone" | "preferredUsername";
@@ -35,7 +39,12 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   public readonly policyStoreArn!: pulumi.Output<string>;
   public readonly authorizerFunctionArn!: pulumi.Output<string>;
   public readonly roleArn!: pulumi.Output<string>;
+  // Renamed outputs: prefer `AuthTable*`; still resolve values if provider uses legacy `TenantTable*` keys.
+  public readonly AuthTableArn!: pulumi.Output<string>;
+  public readonly AuthTableStreamArn!: pulumi.Output<string | undefined>;
+  /** @deprecated Use AuthTableArn */
   public readonly TenantTableArn!: pulumi.Output<string>;
+  /** @deprecated Use AuthTableStreamArn */
   public readonly TenantTableStreamArn!: pulumi.Output<string | undefined>;
   // Optional Cognito outputs
   public readonly userPoolId!: pulumi.Output<string | undefined>;
@@ -63,16 +72,27 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
     );
     const get = (n: string): pulumi.Output<any> =>
       (this as any).getOutput(n) as pulumi.Output<any>;
+    const getFirst = <T>(...names: string[]): pulumi.Output<T> =>
+      pulumi.all(names.map((n) => get(n))).apply((vals) => {
+        for (const v of vals) {
+          if (v !== undefined) return v as T;
+        }
+        return undefined as unknown as T;
+      }) as pulumi.Output<T>;
     this.policyStoreId = get("policyStoreId") as pulumi.Output<string>;
     this.policyStoreArn = get("policyStoreArn") as pulumi.Output<string>;
     this.authorizerFunctionArn = get(
       "authorizerFunctionArn",
     ) as pulumi.Output<string>;
     this.roleArn = get("roleArn") as pulumi.Output<string>;
-    this.TenantTableArn = get("TenantTableArn") as pulumi.Output<string>;
-    this.TenantTableStreamArn = get("TenantTableStreamArn") as pulumi.Output<
-      string | undefined
-    >;
+    this.AuthTableArn = getFirst<string>("AuthTableArn", "TenantTableArn");
+    this.AuthTableStreamArn = getFirst<string | undefined>(
+      "AuthTableStreamArn",
+      "TenantTableStreamArn",
+    );
+    // Deprecated aliases for backward compatibility
+    this.TenantTableArn = this.AuthTableArn;
+    this.TenantTableStreamArn = this.AuthTableStreamArn;
     this.userPoolId = get("userPoolId") as pulumi.Output<string | undefined>;
     this.userPoolArn = get("userPoolArn") as pulumi.Output<string | undefined>;
     this.userPoolDomain = get("userPoolDomain") as pulumi.Output<

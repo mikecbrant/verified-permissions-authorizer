@@ -30,13 +30,15 @@ func NewProvider() (p.Provider, error) {
 type AuthorizerArgs struct {
     // Policy store description
     Description *string `pulumi:"description,optional"`
-    // Validation mode for the policy store: STRICT | OFF (default STRICT)
-    ValidationMode *string           `pulumi:"validationMode,optional"`
     LambdaEnv      map[string]string `pulumi:"lambdaEnvironment,optional"`
     // If true, treat the stage as ephemeral: destroy resources on stack removal (no retention).
+    IsEphemeral *bool `pulumi:"isEphemeral,optional"`
+    // Deprecated: use isEphemeral instead.
     EphemeralStage *bool `pulumi:"ephemeralStage,optional"`
     // If true, enable DynamoDB Streams on the tenant table (NEW_AND_OLD_IMAGES).
     EnableDynamoDbStreams *bool `pulumi:"enableDynamoDbStreams,optional"`
+    // Deprecated: validation mode is fixed to STRICT and this input is ignored.
+    ValidationMode *string `pulumi:"validationMode,optional"`
 }
 
 // AuthorizerResult defines the outputs for the component resource.
@@ -45,6 +47,9 @@ type AuthorizerResult struct {
     PolicyStoreArn string `pulumi:"policyStoreArn"`
     FunctionArn    string `pulumi:"functionArn"`
     RoleArn        string `pulumi:"roleArn"`
+    // DynamoDB table outputs (exported with PascalCase to match existing schema)
+    TenantTableArn       string  `pulumi:"TenantTableArn"`
+    TenantTableStreamArn *string `pulumi:"TenantTableStreamArn,optional"`
 }
 
 // AuthorizerWithPolicyStore is the component implementing the Construct.
@@ -58,14 +63,17 @@ func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
 // Construct implements the component creation logic.
 func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, args AuthorizerArgs, opts pulumi.ResourceOption) (AuthorizerResult, error) {
     var res AuthorizerResult
-    if args.ValidationMode == nil {
-        def := "STRICT"
-        args.ValidationMode = &def
-    }
     // Defaults for new provider-level options
-    if args.EphemeralStage == nil {
+    // Back-compat: honor legacy ephemeralStage if isEphemeral not provided
+    if args.IsEphemeral == nil && args.EphemeralStage != nil {
+        args.IsEphemeral = args.EphemeralStage
+    }
+    if args.IsEphemeral != nil && args.EphemeralStage != nil && *args.IsEphemeral != *args.EphemeralStage {
+        ctx.Log.Warn("Both isEphemeral and deprecated ephemeralStage were provided; using isEphemeral and ignoring ephemeralStage.", nil)
+    }
+    if args.IsEphemeral == nil {
         b := false
-        args.EphemeralStage = &b
+        args.IsEphemeral = &b
     }
     if args.EnableDynamoDbStreams == nil {
         b := false
@@ -73,9 +81,13 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
     }
 
     // 1) Verified Permissions Policy Store
+    if args.ValidationMode != nil {
+        ctx.Log.Warn("validationMode is deprecated and ignored; the provider always uses STRICT.", nil)
+    }
     storeArgs := &awsvp.PolicyStoreArgs{
         ValidationSettings: awsvp.PolicyStoreValidationSettingsArgs{
-            Mode: pulumi.String(*args.ValidationMode),
+            // Fixed to STRICT per review; not configurable
+            Mode: pulumi.String("STRICT"),
         },
     }
     if args.Description != nil {
@@ -89,7 +101,7 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
     // 1b) DynamoDB single-table for tenants/users/roles
     // Removal policy (retain on delete) only when NOT ephemeral
     tableOpts := opts
-    if !*args.EphemeralStage {
+    if !*args.IsEphemeral {
         tableOpts = pulumi.MergeResourceOptions(opts, pulumi.RetainOnDelete(true))
     }
 
@@ -97,12 +109,14 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
     targs := &awsdynamodb.TableArgs{
         BillingMode: pulumi.String("PAY_PER_REQUEST"),
         // Only attributes participating in the primary index or GSIs may be declared here.
-        // Items may still include GSI2PK/GSI2SK attributes; they are intentionally not part of AttributeDefinitions until GSI2 exists.
         Attributes: awsdynamodb.TableAttributeArray{
             awsdynamodb.TableAttributeArgs{ Name: pulumi.String("PK"), Type: pulumi.String("S") },
             awsdynamodb.TableAttributeArgs{ Name: pulumi.String("SK"), Type: pulumi.String("S") },
             awsdynamodb.TableAttributeArgs{ Name: pulumi.String("GSI1PK"), Type: pulumi.String("S") },
             awsdynamodb.TableAttributeArgs{ Name: pulumi.String("GSI1SK"), Type: pulumi.String("S") },
+            // GSI2 attributes
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("GSI2PK"), Type: pulumi.String("S") },
+            awsdynamodb.TableAttributeArgs{ Name: pulumi.String("GSI2SK"), Type: pulumi.String("S") },
         },
         HashKey:  pulumi.String("PK"),
         RangeKey: pulumi.StringPtr("SK"),
@@ -113,11 +127,17 @@ func (c *AuthorizerWithPolicyStore) Construct(ctx *pulumi.Context, name string, 
                 RangeKey:        pulumi.StringPtr("GSI1SK"),
                 ProjectionType:  pulumi.StringPtr("ALL"),
             },
+            awsdynamodb.TableGlobalSecondaryIndexArgs{
+                Name:           pulumi.String("GSI2"),
+                HashKey:        pulumi.String("GSI2PK"),
+                RangeKey:       pulumi.StringPtr("GSI2SK"),
+                ProjectionType: pulumi.StringPtr("ALL"),
+            },
         },
     }
 
     // For retained (non-ephemeral) stages enable deletion protection and PITR
-    if !*args.EphemeralStage {
+    if !*args.IsEphemeral {
         targs.DeletionProtectionEnabled = pulumi.BoolPtr(true)
         targs.PointInTimeRecovery = &awsdynamodb.TablePointInTimeRecoveryArgs{ Enabled: pulumi.Bool(true) }
     }

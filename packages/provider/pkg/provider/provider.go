@@ -288,6 +288,10 @@ func NewAuthorizerWithPolicyStore(
     if args.AuthorizerLambda.ProvisionedConcurrency != nil {
         pc = *args.AuthorizerLambda.ProvisionedConcurrency
     }
+    // Guard: when provisioned concurrency is enabled, ensure it does not exceed reserved concurrency
+    if pc > 0 && rc < pc {
+        return nil, fmt.Errorf("authorizerLambda.provisionedConcurrency (%d) must be less than or equal to reservedConcurrency (%d)", pc, rc)
+    }
 
     fn, err := awslambda.NewFunction(ctx, fmt.Sprintf("%s-authorizer", name), &awslambda.FunctionArgs{
         Role:    role.Arn,

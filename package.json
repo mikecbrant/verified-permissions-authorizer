@@ -13,8 +13,8 @@
     "changeset": "changeset",
     "release": "changeset version && pnpm -r build",
     "test": "pnpm -r test && pnpm go:test",
-    "go:lint": "bash -lc 'cd packages/provider && go mod download && go vet ./...'",
-    "go:test": "bash -lc 'if command -v go >/dev/null 2>&1; then cd packages/provider && go mod download && go test ./... -coverprofile=coverage.out -covermode=count; else echo \"[skip] go not installed; skipping provider tests locally\"; fi'",
+    "go:lint": "bash -lc 'cd packages/provider && go mod tidy && go vet ./...'",
+    "go:test": "bash -lc 'if command -v go >/dev/null 2>&1; then cd packages/provider && go mod tidy && go test ./... -coverprofile=coverage.out -covermode=count; else echo \"[skip] go not installed; skipping provider tests locally\"; fi'",
     "format:go": "bash -lc 'gofmt -s -w packages/provider'"
   },
   "devDependencies": {

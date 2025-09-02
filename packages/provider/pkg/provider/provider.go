@@ -30,7 +30,7 @@ var authorizerIndexMjs string
 // NewProvider wires up the multi-language component provider surface.
 func NewProvider() (p.Provider, error) {
     return infer.NewProviderBuilder().
-        WithComponents(infer.Component(NewAuthorizerWithPolicyStore)).
+        WithComponents(infer.ComponentF(NewAuthorizerWithPolicyStore)).
         Build()
 }
 

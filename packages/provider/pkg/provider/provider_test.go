@@ -141,8 +141,8 @@ func TestCognito_WithSesConfig_ConfiguresEmailAndPolicy(t *testing.T) {
     if got := ecm[resource.PropertyKey("sourceArn")].StringValue(); got != "arn:aws:ses:us-east-1:123456789012:identity/example.com" {
         t.Fatalf("sourceArn mismatch: %s", got)
     }
-    if got := ecm[resource.PropertyKey("from")].StringValue(); got != "no-reply@example.com" {
-        t.Fatalf("from mismatch: %s", got)
+    if got := ecm[resource.PropertyKey("fromEmailAddress")].StringValue(); got != "no-reply@example.com" {
+        t.Fatalf("fromEmailAddress mismatch: %s", got)
     }
     if got := ecm[resource.PropertyKey("replyToEmailAddress")].StringValue(); got != "support@example.com" {
         t.Fatalf("replyToEmailAddress mismatch: %s", got)

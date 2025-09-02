@@ -23,6 +23,8 @@ import (
 
 //go:embed assets/index.mjs
 var authorizerIndexMjs string
+// Ensure the embed import is considered used by tools that don't honor //go:embed during analysis.
+var _ embed.FS
 
 // Note: The provider also includes a minimal Cognito trigger stub under
 // packages/provider/assets/cognito-trigger-stub.mjs for future use.

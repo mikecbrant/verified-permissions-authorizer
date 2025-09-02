@@ -5,6 +5,7 @@ import (
     "encoding/json"
     "fmt"
     "net/mail"
+    "strings"
 
     aws "github.com/pulumi/pulumi-aws/sdk/v6/go/aws"
     awscognito "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cognito"
@@ -16,22 +17,23 @@ import (
     awsvp "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/verifiedpermissions"
     p "github.com/pulumi/pulumi-go-provider"
     "github.com/pulumi/pulumi-go-provider/infer"
+    "github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 //go:embed assets/index.mjs
 var authorizerIndexMjs string
+// Ensure the embed import is considered used by tools that don't honor //go:embed during analysis.
+var _ embed.FS
 
 // Note: The provider also includes a minimal Cognito trigger stub under
 // packages/provider/assets/cognito-trigger-stub.mjs for future use.
 
 // NewProvider wires up the multi-language component provider surface.
 func NewProvider() (p.Provider, error) {
-    return infer.NewProvider(infer.Options{
-        Components: []infer.InferredComponent{
-            infer.Component(NewAuthorizerWithPolicyStore),
-        },
-    })
+    return infer.NewProviderBuilder().
+        WithComponents(infer.ComponentF(NewAuthorizerWithPolicyStore)).
+        Build()
 }
 
 // AuthorizerArgs defines the inputs for the component resource.
@@ -88,7 +90,7 @@ type CognitoOutputs struct {
 // DynamoOutputs groups DynamoDB auth table outputs under the `dynamo` object.
 type DynamoOutputs struct {
     AuthTableArn       pulumi.StringOutput    `pulumi:"AuthTableArn"`
-    AuthTableStreamArn pulumi.StringPtrOutput `pulumi:"AuthTableStreamArn,optional"`
+    AuthTableStreamArn pulumi.StringOutput `pulumi:"AuthTableStreamArn,optional"`
 }
 
 // LambdaOutputs groups Lambda authorizer outputs under the `lambda` object.
@@ -99,7 +101,7 @@ type LambdaOutputs struct {
 
 func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
     a.Describe(&c, "Provision an AWS Verified Permissions Policy Store and a bundled Lambda Request Authorizer.")
-    a.Token(&c, "verified-permissions-authorizer:index:AuthorizerWithPolicyStore")
+    a.SetToken(tokens.ModuleName("verified-permissions-authorizer"), tokens.TypeName("AuthorizerWithPolicyStore"))
 }
 
 // NewAuthorizerWithPolicyStore is the component constructor used by infer.Component.
@@ -110,7 +112,8 @@ func NewAuthorizerWithPolicyStore(
     opts ...pulumi.ResourceOption,
 ) (*AuthorizerWithPolicyStore, error) {
     comp := &AuthorizerWithPolicyStore{}
-    if err := ctx.RegisterComponentResource("verified-permissions-authorizer:index:AuthorizerWithPolicyStore", name, comp, opts...); err != nil {
+    const authorizerType = "verified-permissions-authorizer:index:AuthorizerWithPolicyStore"
+    if err := ctx.RegisterComponentResource(authorizerType, name, comp, opts...); err != nil {
         return nil, err
     }
 
@@ -133,13 +136,14 @@ func NewAuthorizerWithPolicyStore(
     if args.Description != nil {
         storeArgs.Description = pulumi.StringPtr(*args.Description)
     }
-    childOpts := append(opts, pulumi.Parent(comp))
-    // Apply RetainOnDelete to all child resources when retention is enabled
-    retOpts := pulumi.MergeResourceOptions(childOpts...)
+    // Derive common child options and (optionally) add RetainOnDelete.
+    childOpts := append([]pulumi.ResourceOption{}, opts...)
+    childOpts = append(childOpts, pulumi.Parent(comp))
+    retOpts := append([]pulumi.ResourceOption{}, childOpts...)
     if *args.RetainOnDelete {
-        retOpts = pulumi.MergeResourceOptions(retOpts, pulumi.RetainOnDelete(true))
+        retOpts = append(retOpts, pulumi.RetainOnDelete(true))
     }
-    store, err := awsvp.NewPolicyStore(ctx, fmt.Sprintf("%s-store", name), storeArgs, retOpts)
+    store, err := awsvp.NewPolicyStore(ctx, fmt.Sprintf("%s-store", name), storeArgs, retOpts...)
     if err != nil {
         return nil, err
     }
@@ -168,13 +172,13 @@ func NewAuthorizerWithPolicyStore(
                 Name:           pulumi.String("GSI1"),
                 HashKey:        pulumi.String("GSI1PK"),
                 RangeKey:       pulumi.StringPtr("GSI1SK"),
-                ProjectionType: pulumi.StringPtr("ALL"),
+                ProjectionType: pulumi.String("ALL"),
             },
             awsdynamodb.TableGlobalSecondaryIndexArgs{
                 Name:           pulumi.String("GSI2"),
                 HashKey:        pulumi.String("GSI2PK"),
                 RangeKey:       pulumi.StringPtr("GSI2SK"),
-                ProjectionType: pulumi.StringPtr("ALL"),
+                ProjectionType: pulumi.String("ALL"),
             },
         },
     }
@@ -195,7 +199,7 @@ func NewAuthorizerWithPolicyStore(
         targs.StreamViewType = pulumi.StringPtr("NEW_AND_OLD_IMAGES")
     }
 
-    table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-tenant", name), targs, tableOpt)
+    table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-tenant", name), targs, tableOpt...)
     if err != nil {
         return nil, err
     }
@@ -216,7 +220,7 @@ func NewAuthorizerWithPolicyStore(
             },
         }).Json(),
         Description: pulumi.StringPtr("Role for Verified Permissions Lambda Authorizer"),
-    }, retOpts)
+    }, retOpts...)
     if err != nil {
         return nil, err
     }
@@ -225,7 +229,7 @@ func NewAuthorizerWithPolicyStore(
     if _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-logs", name), &awsiam.RolePolicyAttachmentArgs{
         Role:      role.Name,
         PolicyArn: pulumi.String(awsiam.ManagedPolicyAWSLambdaBasicExecutionRole),
-    }, retOpts); err != nil {
+    }, retOpts...); err != nil {
         return nil, err
     }
 
@@ -241,14 +245,14 @@ func NewAuthorizerWithPolicyStore(
     })
     vpPol, err := awsiam.NewPolicy(ctx, fmt.Sprintf("%s-vp", name), &awsiam.PolicyArgs{
         Policy: vpDoc.Json(),
-    }, retOpts)
+    }, retOpts...)
     if err != nil {
         return nil, err
     }
     if _, err = awsiam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-vp-attach", name), &awsiam.RolePolicyAttachmentArgs{
         Role:      role.Name,
         PolicyArn: vpPol.Arn,
-    }, retOpts); err != nil {
+    }, retOpts...); err != nil {
         return nil, err
     }
 
@@ -287,12 +291,12 @@ func NewAuthorizerWithPolicyStore(
     if _, err := awsiam.NewRolePolicy(ctx, fmt.Sprintf("%s-ddb-read", name), &awsiam.RolePolicyArgs{
         Role:   role.Name,
         Policy: ddbReadDoc.Json(),
-    }, retOpts); err != nil {
+    }, retOpts...); err != nil {
         return nil, err
     }
 
     // 3) Lambda code: embed built authorizer
-    code := pulumi.NewAssetArchive(map[string]pulumi.AssetOrArchive{
+    code := pulumi.NewAssetArchive(map[string]interface{}{
         "index.mjs": pulumi.NewStringAsset(authorizerIndexMjs),
     })
 
@@ -317,7 +321,7 @@ func NewAuthorizerWithPolicyStore(
         return nil, fmt.Errorf("lambda.provisionedConcurrency (%d) must be less than or equal to reservedConcurrency (%d)", pc, rc)
     }
 
-    fn, err := awslambda.NewFunction(ctx, fmt.Sprintf("%s-authorizer", name), &awslambda.FunctionArgs{
+    fnArgs := &awslambda.FunctionArgs{
         Role:    role.Arn,
         Runtime: pulumi.String("nodejs22.x"), // fixed; not configurable
         Handler: pulumi.String("index.handler"),
@@ -331,34 +335,42 @@ func NewAuthorizerWithPolicyStore(
         Timeout:       pulumi.Int(10),
         MemorySize:    pulumi.Int(mem),
         ReservedConcurrentExecutions: pulumi.Int(rc),
-    }, retOpts)
+    }
+    if pc > 0 {
+        // Ensure a version is created so we can attach provisioned concurrency to an alias.
+        fnArgs.Publish = pulumi.BoolPtr(true)
+    }
+    fn, err := awslambda.NewFunction(ctx, fmt.Sprintf("%s-authorizer", name), fnArgs, retOpts...)
     if err != nil {
         return nil, err
     }
 
     // Optional provisioned concurrency (disabled by default when pc == 0)
     if pc > 0 {
-        // Create a version and alias, then attach provisioned concurrency to the alias
-        ver, err := awslambda.NewVersion(ctx, fmt.Sprintf("%s-authorizer-v", name), &awslambda.VersionArgs{
-            FunctionName: fn.Name,
-        }, retOpts)
-        if err != nil {
-            return nil, err
-        }
+        // Create an alias pointing to the published version. Derive the numeric version
+        // from the function's QualifiedArn (which includes the version when Publish=true).
+        version := fn.QualifiedArn.ApplyT(func(qarn string) (string, error) {
+            // qarn format: arn:aws:lambda:<region>:<acct>:function:<name>:<version>
+            idx := strings.LastIndex(qarn, ":")
+            if idx == -1 || idx == len(qarn)-1 {
+                return "", fmt.Errorf("unexpected QualifiedArn: %s", qarn)
+            }
+            return qarn[idx+1:], nil
+        }).(pulumi.StringOutput)
+
         alias, err := awslambda.NewAlias(ctx, fmt.Sprintf("%s-authorizer-live", name), &awslambda.AliasArgs{
             Name:            pulumi.String("live"),
             FunctionName:    fn.Name,
-            FunctionVersion: ver.Version,
-        }, retOpts)
+            FunctionVersion: version,
+        }, retOpts...)
         if err != nil {
             return nil, err
         }
-        _, err = awslambda.NewProvisionedConcurrencyConfig(ctx, fmt.Sprintf("%s-authorizer-pc", name), &awslambda.ProvisionedConcurrencyConfigArgs{
+        if _, err := awslambda.NewProvisionedConcurrencyConfig(ctx, fmt.Sprintf("%s-authorizer-pc", name), &awslambda.ProvisionedConcurrencyConfigArgs{
             FunctionName:                    fn.Name,
             Qualifier:                        alias.Name,
             ProvisionedConcurrentExecutions: pulumi.Int(pc),
-        }, retOpts)
-        if err != nil {
+        }, retOpts...); err != nil {
             return nil, err
         }
     }
@@ -367,7 +379,7 @@ func NewAuthorizerWithPolicyStore(
     if _, err = awscloudwatch.NewLogGroup(ctx, fmt.Sprintf("%s-lg", name), &awscloudwatch.LogGroupArgs{
         Name:            fn.Name.ApplyT(func(n string) string { return "/aws/lambda/" + n }).(pulumi.StringOutput).ToStringPtrOutput(),
         RetentionInDays: pulumi.IntPtr(14),
-    }, retOpts); err != nil {
+    }, retOpts...); err != nil {
         return nil, err
     }
 
@@ -383,7 +395,7 @@ func NewAuthorizerWithPolicyStore(
 
     // 5) Optional Cognito provisioning + Verified Permissions identity source
     if args.Cognito != nil {
-        cog, err := provisionCognito(ctx, name, store, *args.Cognito, *args.RetainOnDelete, retOpts)
+        cog, err := provisionCognito(ctx, name, store, *args.Cognito, *args.RetainOnDelete, retOpts...)
         if err != nil {
             return nil, err
         }
@@ -399,9 +411,9 @@ func NewAuthorizerWithPolicyStore(
 }
 
 // withRetention augments resource options with RetainOnDelete when retain==true.
-func withRetention(opts pulumi.ResourceOption, retain bool) pulumi.ResourceOption {
+func withRetention(opts []pulumi.ResourceOption, retain bool) []pulumi.ResourceOption {
     if retain {
-        return pulumi.Merge(opts, pulumi.RetainOnDelete(true))
+        return append(opts, pulumi.RetainOnDelete(true))
     }
     return opts
 }
@@ -430,7 +442,7 @@ func provisionCognito(
     store *awsvp.PolicyStore,
     cfg CognitoConfig,
     retainOnDelete bool,
-    opts pulumi.ResourceOption,
+    opts ...pulumi.ResourceOption,
 ) (*cognitoProvisionResult, error) {
     // Construct minimal Cognito user pool args
     upArgs := &awscognito.UserPoolArgs{
@@ -467,10 +479,10 @@ func provisionCognito(
 
     // Optional: SES-backed email sending
     var (
-        regionName      string
-        sesIdentityName string
-        sesCallerAcct   string
-        fromEmail       string
+        regionName        string
+        sesIdentityName   string
+        sesCallerAcct     string
+        fromEmail         string
         sesIdentityRegion string
     )
     if cfg.SesConfig != nil {
@@ -504,23 +516,24 @@ func provisionCognito(
         }
 
         // Create a region-scoped AWS provider for SES (when identity region differs)
-        _ = identRegion // currently unused outside resource option; keep for clarity
+        _ = sesIdentityRegion // reference for clarity
 
         // Configure the user pool to use SES (DEVELOPER) with provided values
-        upArgs.EmailConfiguration = &awscognito.UserPoolEmailConfigurationArgs{
+        emailCfg := &awscognito.UserPoolEmailConfigurationArgs{
             EmailSendingAccount: pulumi.String("DEVELOPER"),
             SourceArn:           pulumi.StringPtr(cfg.SesConfig.SourceArn),
-            From:                pulumi.StringPtr(cfg.SesConfig.From),
+            FromEmailAddress:    pulumi.StringPtr(cfg.SesConfig.From),
         }
         if cfg.SesConfig.ReplyToEmail != nil && *cfg.SesConfig.ReplyToEmail != "" {
-            upArgs.EmailConfiguration.ReplyToEmailAddress = pulumi.StringPtr(*cfg.SesConfig.ReplyToEmail)
+            emailCfg.ReplyToEmailAddress = pulumi.StringPtr(*cfg.SesConfig.ReplyToEmail)
         }
         if cfg.SesConfig.ConfigurationSet != nil && *cfg.SesConfig.ConfigurationSet != "" {
-            upArgs.EmailConfiguration.ConfigurationSet = pulumi.StringPtr(*cfg.SesConfig.ConfigurationSet)
+            emailCfg.ConfigurationSet = pulumi.StringPtr(*cfg.SesConfig.ConfigurationSet)
         }
+        upArgs.EmailConfiguration = emailCfg
     }
 
-    userPool, err := awscognito.NewUserPool(ctx, fmt.Sprintf("%s-userpool", name), upArgs, opts)
+    userPool, err := awscognito.NewUserPool(ctx, fmt.Sprintf("%s-userpool", name), upArgs, opts...)
     if err != nil {
         return nil, err
     }
@@ -572,7 +585,7 @@ func provisionCognito(
             EmailIdentity: pulumi.String(sesIdentityName),
             PolicyName:    pulumi.String(fmt.Sprintf("%s-cognito", name)),
             Policy:        policy,
-        }, pulumi.Merge(withRetention(opts, retainOnDelete), pulumi.Provider(sesProv))); err != nil {
+        }, append(withRetention(opts, retainOnDelete), pulumi.Provider(sesProv))...); err != nil {
             return nil, err
         }
     }
@@ -587,7 +600,7 @@ func provisionCognito(
             // sensible defaults, can be expanded later via inputs
             PreventUserExistenceErrors: pulumi.StringPtr("ENABLED"),
             GenerateSecret:             pulumi.BoolPtr(false),
-        }, opts)
+        }, opts...)
         if err != nil {
             return nil, err
         }
@@ -603,7 +616,7 @@ func provisionCognito(
                 ClientIds:   pulumi.StringArray(clientIds),
             },
         },
-    }, opts)
+    }, opts...)
     if err != nil {
         return nil, err
     }
@@ -612,7 +625,7 @@ func provisionCognito(
     res := &cognitoProvisionResult{
         UserPoolId:  userPool.ID().ToStringOutput(),
         UserPoolArn: userPool.Arn,
-        ClientIds:   pulumi.ToStringArrayOutput(pulumi.StringArray(clientIds)),
+        ClientIds:   pulumi.StringArray(clientIds).ToStringArrayOutput(),
         Parameters:  (pulumi.StringMap{"USER_POOL_ID": userPool.ID().ToStringOutput()}).ToStringMapOutput(),
     }
     return res, nil

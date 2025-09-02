@@ -50,10 +50,11 @@ jobs:
         with:
           go-version-file: 'packages/provider/go.mod'
 
+      - name: Go vet (lint) provider
+        run: pnpm go:lint
+
       - name: Unit tests (Go provider) with coverage
-        run: |
-          cd packages/provider
-          go test ./... -coverprofile=coverage.out -covermode=count
+        run: pnpm go:test
 
       - name: Build workspace (ts)
         run: pnpm -r --parallel build

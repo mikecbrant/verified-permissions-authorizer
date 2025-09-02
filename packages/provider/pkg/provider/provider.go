@@ -99,7 +99,7 @@ type LambdaOutputs struct {
 
 func (c *AuthorizerWithPolicyStore) Annotate(a infer.Annotator) {
     a.Describe(&c, "Provision an AWS Verified Permissions Policy Store and a bundled Lambda Request Authorizer.")
-    a.SetToken(&c, tokens.ModuleName("verified-permissions-authorizer"), tokens.TypeName("AuthorizerWithPolicyStore"))
+    a.SetToken(tokens.ModuleName("verified-permissions-authorizer"), tokens.TypeName("AuthorizerWithPolicyStore"))
 }
 
 // NewAuthorizerWithPolicyStore is the component constructor used by infer.Component.
@@ -110,7 +110,8 @@ func NewAuthorizerWithPolicyStore(
     opts ...pulumi.ResourceOption,
 ) (*AuthorizerWithPolicyStore, error) {
     comp := &AuthorizerWithPolicyStore{}
-    if err := ctx.RegisterComponentResource("verified-permissions-authorizer:index:AuthorizerWithPolicyStore", name, comp, opts...); err != nil {
+    const authorizerType = "verified-permissions-authorizer:index:AuthorizerWithPolicyStore"
+    if err := ctx.RegisterComponentResource(authorizerType, name, comp, opts...); err != nil {
         return nil, err
     }
 
@@ -293,7 +294,7 @@ func NewAuthorizerWithPolicyStore(
     }
 
     // 3) Lambda code: embed built authorizer
-    code := pulumi.NewAssetArchive(pulumi.AssetMap{
+    code := pulumi.NewAssetArchive(map[string]interface{}{
         "index.mjs": pulumi.NewStringAsset(authorizerIndexMjs),
     })
 
@@ -476,10 +477,10 @@ func provisionCognito(
 
     // Optional: SES-backed email sending
     var (
-        regionName      string
-        sesIdentityName string
-        sesCallerAcct   string
-        fromEmail       string
+        regionName        string
+        sesIdentityName   string
+        sesCallerAcct     string
+        fromEmail         string
         sesIdentityRegion string
     )
     if cfg.SesConfig != nil {
@@ -516,17 +517,18 @@ func provisionCognito(
         _ = sesIdentityRegion // reference for clarity
 
         // Configure the user pool to use SES (DEVELOPER) with provided values
-        upArgs.EmailConfiguration = &awscognito.UserPoolEmailConfigurationArgs{
+        emailCfg := &awscognito.UserPoolEmailConfigurationArgs{
             EmailSendingAccount: pulumi.String("DEVELOPER"),
             SourceArn:           pulumi.StringPtr(cfg.SesConfig.SourceArn),
-            From:                pulumi.StringPtr(cfg.SesConfig.From),
+            FromEmailAddress:    pulumi.StringPtr(cfg.SesConfig.From),
         }
         if cfg.SesConfig.ReplyToEmail != nil && *cfg.SesConfig.ReplyToEmail != "" {
-            upArgs.EmailConfiguration.ReplyToEmailAddress = pulumi.StringPtr(*cfg.SesConfig.ReplyToEmail)
+            emailCfg.ReplyToEmailAddress = pulumi.StringPtr(*cfg.SesConfig.ReplyToEmail)
         }
         if cfg.SesConfig.ConfigurationSet != nil && *cfg.SesConfig.ConfigurationSet != "" {
-            upArgs.EmailConfiguration.ConfigurationSet = pulumi.StringPtr(*cfg.SesConfig.ConfigurationSet)
+            emailCfg.ConfigurationSet = pulumi.StringPtr(*cfg.SesConfig.ConfigurationSet)
         }
+        upArgs.EmailConfiguration = emailCfg
     }
 
     userPool, err := awscognito.NewUserPool(ctx, fmt.Sprintf("%s-userpool", name), upArgs, opts...)
@@ -621,7 +623,7 @@ func provisionCognito(
     res := &cognitoProvisionResult{
         UserPoolId:  userPool.ID().ToStringOutput(),
         UserPoolArn: userPool.Arn,
-        ClientIds:   pulumi.ToStringArrayOutput(pulumi.StringArray(clientIds)),
+        ClientIds:   pulumi.StringArray(clientIds).ToStringArrayOutput(),
         Parameters:  (pulumi.StringMap{"USER_POOL_ID": userPool.ID().ToStringOutput()}).ToStringMapOutput(),
     }
     return res, nil

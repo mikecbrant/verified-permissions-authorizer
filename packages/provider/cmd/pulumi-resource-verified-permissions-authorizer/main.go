@@ -1,6 +1,7 @@
 package main
 
 import (
+    "context"
     "fmt"
     "os"
 
@@ -14,7 +15,7 @@ func main() {
         fmt.Fprintln(os.Stderr, err)
         os.Exit(1)
     }
-    if err := p.RunProvider("verified-permissions-authorizer", "0.0.0", prov); err != nil {
+    if err := p.RunProvider(context.Background(), "verified-permissions-authorizer", "0.0.0", prov); err != nil {
         fmt.Fprintln(os.Stderr, err)
         os.Exit(1)
     }

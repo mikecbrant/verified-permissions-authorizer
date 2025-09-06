@@ -16,7 +16,7 @@ See `packages/provider/README.md`, `packages/sdk/nodejs/`, and `packages/lambda-
 
 ## Deployment considerations and ephemeral environments
 
-- If you plan to deploy this provider and/or spin up short‑lived ephemeral stacks, see the (Proposed) plan in [docs/vp-14-ephemeral-vp-stacks-plan.md](docs/vp-14-ephemeral-vp-stacks-plan.md) for guidance on orchestration (Pulumi Deployments), naming, regions, and CI/CD.
+- If you plan to deploy this provider and/or spin up short‑lived ephemeral stacks, see [docs/vp-14-ephemeral-vp-stacks-plan.md](docs/vp-14-ephemeral-vp-stacks-plan.md) for a more detailed exploration of possible options.
 
 ## Cognito + SES
 

@@ -1,0 +1,12 @@
+{
+  "name": "vp-authorizer",
+  "description": "AWS Verified Permissions Policy Store and a bundled AWS Lambda Request Authorizer function",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "dependencies": {
+    "@pulumi/pulumi": "*"
+  }
+}

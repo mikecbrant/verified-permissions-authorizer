@@ -53,7 +53,6 @@ We need a simple, reproducible way to spin up and tear down short‑lived (ephem
 ### Assumptions and gaps to confirm
 
 - Regions: Use AWS Regions that support both Amazon Verified Permissions and Amazon Cognito. This repo defaults to `us-east-1` for its own internal deployments. When Cognito email is enabled, ensure the provided SES identity ARN is in the same Region as the Cognito User Pool (SES identities are Region‑scoped for sending).
-- Accounts in scope for ephemeral deployments and their aliases.
 - Whether Pulumi Cloud SaaS is approved for state and OIDC in this org.
 - Target Pulumi language/runtime: TypeScript (finalized). The actual implementation will land in a follow‑up PR.
 - Desired TTL for ephemeral stacks (proposal: 48h default) and max concurrent ephemerals per account.

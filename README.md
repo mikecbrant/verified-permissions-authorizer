@@ -14,6 +14,10 @@ Notes
 
 See `packages/provider/README.md`, `packages/sdk/nodejs/`, and `packages/lambda-authorizer/README.md` for package‑specific details.
 
+## Deployment considerations and ephemeral environments
+
+- If you plan to deploy this provider and/or spin up short‑lived ephemeral stacks, see the (Proposed) plan in [docs/vp-14-ephemeral-vp-stacks-plan.md](docs/vp-14-ephemeral-vp-stacks-plan.md) for guidance on orchestration (Pulumi Deployments), naming, regions, and CI/CD.
+
 ## Cognito + SES
 
 When you opt into Cognito by supplying the top-level `cognito` input on the provider, you can also configure SES-backed email sending via `cognito.sesConfig`. See `packages/provider/README.md` for the full field list and validation rules.

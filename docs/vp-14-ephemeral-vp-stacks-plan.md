@@ -8,7 +8,7 @@ Owners: Platform/Infra (primary), AppSec (review), https://linear.app/mikebrant/
 
 ## 0) One-paragraph summary
 
-We need a simple, reproducible way to spin up and tear down short‑lived (ephemeral) stacks of Amazon Verified Permissions (AVP) resources—policy store, Lambda authorizer, optional Cognito identity source, and the provider-managed DynamoDB table—keyed by a supplied stage name and deployed into a target AWS account/region. After evaluating Pulumi and SST, the recommendation is: keep this in Pulumi. Use Pulumi Cloud as the state backend and orchestrate ephemeral environments with Pulumi Deployments Review Stacks (PR‑scoped) backed by AWS OIDC. For cost control and flexibility, pair this with GitHub Actions as the trigger and fall back to GH‑hosted `pulumi up` for heavy‑usage repos to avoid exceeding Pulumi Deployments free minutes. Publish the reusable Pulumi Component Provider we already maintain to the public Pulumi Registry and npm, versioned via Changesets.
+We need a simple, reproducible way to spin up and tear down short‑lived (ephemeral) stacks of Amazon Verified Permissions (AVP) resources—policy store, Lambda authorizer, Cognito identity source (included by default for ephemerals; optional for long‑lived envs via provider input), and the provider‑managed DynamoDB table—keyed by a supplied stage name and deployed into a target AWS account/region. SES identities/ARNs used by Cognito are always supplied by the consumer; our stacks do not provision SES. After evaluating Pulumi and SST, the recommendation is: keep this in Pulumi. Use Pulumi Cloud as the state backend and orchestrate ephemeral environments with Pulumi Deployments Review Stacks (PR‑scoped) backed by AWS OIDC. For cost control and flexibility, pair this with GitHub Actions as the trigger and fall back to GH‑hosted `pulumi up` for heavy‑usage repos to avoid exceeding Pulumi Deployments free minutes. Publish the reusable Pulumi Component Provider we already maintain to the public Pulumi Registry and npm, versioned via Changesets.
 
 ---
 
@@ -18,6 +18,7 @@ We need a simple, reproducible way to spin up and tear down short‑lived (ephem
 
 - Create/update/destroy ephemeral stacks of AVP resources for a given `stage` within a specified AWS account/region.
 - Stage names are provided (e.g., `pr-123`, `mike`, `demo-aug15`); stacks must be isolated by stage and account.
+  - Cognito is included for ephemerals. When Cognito email is enabled, SES identities/ARNs are provided by the consumer and referenced by the stack (not created by it). The SES identity must be in the same AWS account and Region as the Cognito User Pool; cross‑account sending requires SES authorization and is out of scope for the default flow.
 
 ### Non-functional requirements
 
@@ -25,7 +26,14 @@ We need a simple, reproducible way to spin up and tear down short‑lived (ephem
 - Reproducibility & idempotency: Re-running with the same config is safe; drift detection where available.
 - Lifecycle: Create on PR open or manual request; update on push; destroy on PR close/merge or manual expiry.
 
-- Naming conventions: All resources tagged and, where supported, named with `project`, `stack`, `stage`, `account`, `region`.
+- Naming conventions:
+  - Pulumi stack names: keep `<account-alias>-<region>-<stage>` (examples below). For Review Stacks (PR ephemerals) created by Pulumi Deployments, use the default `pr-<number>` naming and carry `account-alias` and `region` via stack config and tags. This guidance is scoped to Pulumi stack names only.
+    - `account-alias` must match `^[a-z0-9-]{1,20}$` (lowercase letters, digits, hyphens) and be organization‑approved.
+    - `region` must be a valid AWS Region id (e.g., `us-east-1`).
+    - `stage` must match `^[a-z0-9-]{1,32}$`.
+    - Example: `sandpit-us-east-1-pr-123`.
+  - AWS resource names: do NOT include account alias or region in resource names. Include `stage` only where it improves clarity and the service allows it. Put account alias and region in tags instead. Exception: resources that require globally unique names (e.g., S3 buckets) may include `stage` and, if necessary, account/region suffixes to ensure uniqueness.
+  - Service‑specific uniqueness: Cognito Hosted UI domain prefixes are Region‑scoped and must be unique; including `stage` is recommended.
 - Concurrency limits: Cap active ephemeral stacks per account (initially 10–25), serialized updates per stack.
 - Developer UX: One PR creates one isolated environment; outputs are surfaced back to the PR.
 - Cost awareness: Defaults minimize spend (no provisioned concurrency, on‑demand tables, short log retention).
@@ -34,22 +42,22 @@ We need a simple, reproducible way to spin up and tear down short‑lived (ephem
 
 - Target model: Multi‑account recommended (e.g., `sandpit`, `dev`, `stage`, `prod`). Ephemeral stacks deploy only to non‑prod accounts unless explicitly allowed.
 - Cross‑account deployment: Use AWS IAM roles per account that trust Pulumi Cloud OIDC for Deployments and/or GitHub OIDC for Actions. Trust policies restrict by repo, org, project, and (optionally) stack pattern.
-- Permissions boundary: Deployment roles get `AdministratorAccess` or a curated superset allowing IAM creation (authorizer role, Cognito, SES identity policy) and AVP operations, scoped by conditions where feasible.
+- IAM permission scope for deployment roles: Use a curated least‑privilege policy covering AVP, Lambda, IAM (for the authorizer role), and Cognito, with appropriate conditions. Avoid using `AdministratorAccess`. If onboarding friction is high, a time‑boxed `AdministratorAccess` role may be used only as a temporary bootstrap before replacing it with the curated policy. SES identities are not created by our stacks; consumers provide SES identity ARNs when enabling email from Cognito.
 
 ### State, secrets, and sensitive config
 
 - State backend: Pulumi Cloud (preferred) for state, history, RBAC, and Deployments. Self‑managed S3/Dynamo only if Pulumi Cloud is disallowed.
-- Secrets: Start with Pulumi Cloud’s built‑in secrets provider. Optionally adopt Pulumi ESC for centralized secrets and dynamic cloud creds; or use AWS KMS secrets‑provider if org policy requires customer‑managed keys.
-- Operational secrets (examples): `JWT_SECRET` for Lambda authorizer (stack secret), optional SES From/identity ARNs for Cognito email, any test user credentials created during automation.
+- Secrets: Decision — use Pulumi Cloud’s built‑in secrets provider as the baseline for CI/CD. Generate ephemeral secrets per stack where possible (e.g., `JWT_SECRET` via the Pulumi Random provider). Optionally adopt Pulumi ESC for centralized secrets and dynamic cloud creds; or use AWS KMS secrets‑provider if org policy requires customer‑managed keys.
+- Operational secrets (examples): `JWT_SECRET` for Lambda authorizer and any test user credentials created during automation. SES `identityArn` and `fromEmail` are configuration values (not secrets) provided by the consumer. Mark sensitive outputs as Pulumi secret outputs so they are redacted in PR comments and logs.
 
 ### Assumptions and gaps to confirm
 
-- Allowed AWS Regions for AVP/Cognito (default `us-east-1`).
+- Regions: Use AWS Regions that support both Amazon Verified Permissions and Amazon Cognito. This repo defaults to `us-east-1` for its own internal deployments. When Cognito email is enabled, ensure the provided SES identity ARN is in the same Region as the Cognito User Pool (SES identities are Region‑scoped for sending).
 - Accounts in scope for ephemeral deployments and their aliases.
 - Whether Pulumi Cloud SaaS is approved for state and OIDC in this org.
-- Target Pulumi language/runtime for the small infra program that consumes our provider (TypeScript vs Go). Suggest TypeScript to match this repo.
+- Target Pulumi language/runtime: TypeScript (finalized). The actual implementation will land in a follow‑up PR.
 - Desired TTL for ephemeral stacks (proposal: 48h default) and max concurrent ephemerals per account.
-- Whether Cognito + SES is needed for ephemerals or only for long‑lived envs.
+- When Cognito email is enabled for ephemerals, confirm SES identity ARNs per Region (provided by the consumer).
 
 ---
 
@@ -87,15 +95,56 @@ We evaluated three orchestration models:
 
 Recommendation: Hybrid with Pulumi‑first.
 
-- Ephemerals (PRs): Use Pulumi Review Stacks for automatic create/update/destroy. This gives PR comments, outputs, and one‑click access in the Console. Map each PR to a Pulumi stack named `pr-<number>` in a dedicated project (e.g., `vp-ephemeral`).
-- Stable envs (dev/stage/prod): Use Pulumi Deployments “push‑to‑deploy” on protected branches with approvals, or keep existing workflows in GitHub Actions that call Pulumi CLI.
+- Internal deployments from this repo will use Pulumi Deployments with OIDC to AWS (Pulumi Cloud OIDC). GitHub Actions remains a fallback/trigger and an option for repositories where Deployments minutes are constrained.
+
+- Ephemerals (PRs): Use Pulumi Review Stacks for automatic create/update/destroy. This gives PR comments, outputs, and one‑click access in the Console. Map each PR to a Pulumi stack named `pr-<number>` (Review Stacks default) in a dedicated project (e.g., `vp-ephemeral`); carry `account-alias` and `region` via stack config and tags. To avoid name collisions when targeting multiple accounts/regions concurrently, standardize on one Review‑Stack project per target AWS account (optionally per Region).
+- Stable envs (single‑main promotion): Use Pulumi Deployments on a single `main` branch with environment‑gated promotions/approvals across `dev → stage → prod` stacks. Avoid long‑lived `dev/stage/prod` branches.
 - If Deployments minutes are a concern at scale, switch ephemerals to GH Actions while retaining Pulumi Cloud for state. Actions minutes are free for public repos; for private repos rely on plan quotas.
 
 Stage → Pulumi stack → AWS account mapping:
 
 - Project: `vp-authorizer` (or `vp-ephemeral` dedicated for PRs)
-- Stack naming: `<account-alias>-<region>-<stage>` (examples: `sandpit-us-east-1-pr-123`, `dev-us-east-1-mike`).
-- Account routing: Each stack’s Deployment Settings or GH env maps to a specific AWS role ARN for that target account.
+- Stack naming: `<account-alias>-<region>-<stage>` for Actions‑only ephemerals and stable envs (examples: `sandpit-us-east-1-demo`, `dev-us-east-1-mike`). Review Stacks use the default `pr-<number>` name and carry account/region via config/tags.
+- Account selection mechanics:
+  - Pulumi Deployments: Prefer project‑level environments that provide the AWS Role ARN (one per target account/project). Avoid per‑stack settings for Review Stacks to keep ephemerals low‑touch.
+  - GitHub Actions: prefer a single input/env `AWS_ROLE_ARN` to select the role to assume via OIDC; set `AWS_REGION` explicitly and derive the account id from the role ARN when needed.
+
+    Example (excerpt):
+
+    ```yaml
+    jobs:
+      up:
+        permissions:
+          id-token: write
+          contents: read
+        env:
+          ACCOUNT_ALIAS: sandpit
+          AWS_ROLE_ARN: arn:aws:iam::123456789012:role/pulumi-deployer
+          AWS_REGION: us-east-1
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          STACK_NAME: ${{ env.ACCOUNT_ALIAS }}-${{ env.AWS_REGION }}-pr-${{ github.event.pull_request.number }}
+        steps:
+          - uses: actions/checkout@v4
+          - uses: aws-actions/configure-aws-credentials@v4
+            with:
+              role-to-assume: ${{ env.AWS_ROLE_ARN }}
+              aws-region: ${{ env.AWS_REGION }}
+          - uses: pulumi/actions@v6
+            with:
+              command: up
+              stack-name: ${{ env.STACK_NAME }}
+    ```
+    (Use stable tags for readability; in production, pin these actions to specific commit SHAs per your organization’s security policy, and refresh them periodically. Store `PULUMI_ACCESS_TOKEN` as a GitHub repository secret.)
+
+    Tip: serialize applies per logical stack with a job‑level concurrency block keyed by `STACK_NAME`:
+
+    ```yaml
+    jobs:
+      up:
+        concurrency:
+          group: ${{ github.workflow }}-${{ env.AWS_ROLE_ARN }}-${{ env.AWS_REGION }}-${{ env.STACK_NAME }}
+          cancel-in-progress: true
+    ```
 
 Lifecycle triggers:
 
@@ -144,13 +193,31 @@ Repo‑level automation artifacts (high‑level)
 
 - Pulumi project under `infra/` (or `infra/vp-authorizer/`) that consumes the existing component provider from `packages/provider` and exposes minimal configuration.
 - Pulumi stack configs: `Pulumi.pr.yaml` template for Review Stacks; `Pulumi.dev.yaml`, etc., for stable envs.
-- Pulumi Cloud Deployments settings per stack (source, OIDC role ARN, environment variables). If Actions‑only, define GH workflows for `pulumi up` and `pulumi destroy` with OIDC.
+  - Example `Pulumi.pr.yaml` (minimal):
+
+    ```yaml
+    config:
+      vp-authorizer:accountAlias: sandpit
+      aws:region: us-east-1
+      vp-authorizer:stage: "pr-<number>"
+      vp-authorizer:cognito:
+        enabled: true
+        sesConfig:
+          fromEmail: no-reply@example.com
+          identityArn: arn:aws:ses:us-east-1:123456789012:identity/example.com
+    ```
+    Set `jwtSecret` securely rather than committing it to source. The `stage` placeholder should be set dynamically by the orchestrator (Pulumi Deployments or GH Actions):
+
+    - Recommended for ephemerals: generate via the Pulumi Random provider in code.
+    - Or via CLI at deploy: `pulumi config set vp-authorizer:jwtSecret --secret "$(openssl rand -base64 32)"`.
+- Pulumi Cloud Deployments settings per stack (stable stacks only) to bind the AWS Role ARN; Review Stacks should inherit credentials from project‑level environments. If Actions‑only, define GH workflows for `pulumi up` and `pulumi destroy` with OIDC and pass `aws_role_arn`/`aws_account_id`/`aws_region` as inputs/env.
 - IAM roles per target AWS account for Pulumi OIDC and GH OIDC; trust policies constrained by org/repo/project/stack patterns.
 
 Naming, tagging, and metadata
 
-- Stack name: `<account-alias>-<region>-<stage>` (DNS‑safe; lowercase, digits, hyphens). Stage must match `^[a-z0-9-]{1,32}$`.
-- Standard AWS tags on all resources: `Project=vp-authorizer`, `PulumiProject=<project>`, `PulumiStack=<stack>`, `Stage=<stage>`, `Account=<alias>`, `Repo=mikecbrant/verified-permissions-authorizer`, `Owner=<github-actor or team>`, `TTL=<ISO8601 or hours>`.
+- Stack name (Pulumi): `<account-alias>-<region>-<stage>` (DNS‑safe; lowercase, digits, hyphens). Stage must match `^[a-z0-9-]{1,32}$`.
+- AWS resource naming: omit account alias and region from resource names; prefer including only `stage` where helpful and supported. Keep account alias and region in tags. Exception: globally‑unique names (e.g., S3 buckets) may include suffixes for uniqueness.
+- Standard AWS tags on all resources: `Project=vp-authorizer`, `PulumiProject=<project>`, `PulumiStack=<stack>`, `Stage=<stage>`, `Account=<alias>`, `Repo=<org/repo>` (e.g., `${{ github.repository }}` in Actions), `Owner=<github-actor or team>`, `TTL=<ISO8601 or hours>`.
 - Observability/audit: Rely on Pulumi Cloud activity log for IaC operations; optional drift detection (Enterprise) or scheduled previews.
 
 Security notes
@@ -179,19 +246,17 @@ Security notes
 Explicit answers:
 
 - “Pulumi Console and/or GitHub Actions?” → Pulumi Console (Deployments + Review Stacks) as primary, with GitHub Actions as the trigger and cost‑control fallback (CLI‑driven applies/destroys when minutes are tight).
-- “DevOps recommendations for continuous deployment and Registry release?” → Branch‑based promotions with protected branches and approvals; Review Stacks for PRs; continue Changesets‑based releases to public Pulumi Registry and npm; maintain OIDC to AWS in both Pulumi and GitHub.
+- “DevOps recommendations for continuous deployment and Registry release?” → Single‑main promotions with environment‑gated approvals (Pulumi Deployments) across `dev → stage → prod`; Review Stacks for PRs; continue Changesets‑based releases to public Pulumi Registry and npm; maintain OIDC to AWS in both Pulumi and GitHub.
 
 ---
 
 ## 8) Open questions for stakeholders
 
-1. Which AWS accounts and Regions are in scope for ephemerals? Please provide account IDs → alias map.
-2. Is Pulumi Cloud SaaS approved for state and OIDC in these accounts? If not, do we prefer S3+Dynamo backend and Actions‑only orchestration?
-3. Do ephemerals need Cognito + SES configured, or should we omit these to reduce cost and time? If SES is needed, confirm the SES identity ARNs per Region.
-4. What is the default TTL for PR environments (24h, 48h, 72h)? What’s the hard cap on concurrently active PR stacks per account?
-5. Are there compliance constraints requiring AWS KMS as the Pulumi secrets provider (instead of Pulumi‑managed secrets)?
-6. Any budget or plan constraints that would preclude Pulumi Team/Enterprise features (e.g., TTL stacks, drift detection)?
-7. Target runtime for the infra program (TypeScript vs Go) and which team owns it.
+1. Which AWS accounts are in scope for ephemerals? Please provide account IDs → alias map.
+2. What is the default TTL for PR environments (24h, 48h, 72h)? What’s the hard cap on concurrently active PR stacks per account?
+3. Is Pulumi Cloud SaaS approved for state and OIDC in these accounts? If not, what’s the approved alternative (S3+Dynamo backend, Actions‑only orchestration)?
+4. Are there compliance constraints requiring AWS KMS as the Pulumi secrets provider (instead of Pulumi‑managed secrets)?
+5. Any budget or plan constraints that would preclude Pulumi Team/Enterprise features (e.g., TTL stacks, drift detection)?
 
 ---
 

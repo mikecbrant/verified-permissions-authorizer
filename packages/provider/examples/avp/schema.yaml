@@ -10,23 +10,12 @@ ticketing-${project}-${stack}:
           name: { type: String }
 
     User:
-      # Users can belong to many Groups and Tenants; Roles are decorated at auth time
-      memberOfTypes: [Group, Tenant]
+      # Global entity; tenant-scoped permissions are granted via TenantGrant
+      memberOfTypes: [GlobalRole]
       shape:
         type: Record
         attributes:
-          email: { type: String }
-          displayName: { type: String }
-          tenantId: { type: String }
-
-    Group:
-      # Enable nested groups (tree)
-      memberOfTypes: [Group]
-      shape:
-        type: Record
-        attributes:
-          name: { type: String }
-          tenantId: { type: String }
+          userId: { type: String }
 
     Role:
       # No hierarchy for roles
@@ -34,20 +23,23 @@ ticketing-${project}-${stack}:
         type: Record
         attributes:
           name: { type: String }
+          scope: { type: String } # "tenant"
 
     GlobalRole:
       shape:
         type: Record
         attributes:
           name: { type: String }
+          scope: { type: String } # "global"
 
     TenantGrant:
+      # Used as principal for tenant-scoped permissions
+      memberOfTypes: [Role, Tenant, User]
       shape:
         type: Record
         attributes:
-          user: { type: Entity, name: User }
-          role: { type: Entity, name: Role }
-          tenant: { type: Entity, name: Tenant }
+          tenantId: { type: String }
+          userId: { type: String }
 
     # Resources
     Ticket:
@@ -68,7 +60,7 @@ ticketing-${project}-${stack}:
           name: { type: String }
           tenantId: { type: String }
 
-    Files:
+    File:
       memberOfTypes: [Tenant]
       shape:
         type: Record
@@ -76,55 +68,87 @@ ticketing-${project}-${stack}:
           path: { type: String }
           tenantId: { type: String }
 
-    Grant:
-      shape:
-        type: Record
-        attributes:
-          user: { type: Entity, name: User }
-          role: { type: Entity, name: Role }
-          tenant: { type: Entity, name: Tenant }
-
-    GlobalGrant:
-      shape:
-        type: Record
-        attributes:
-          user: { type: Entity, name: User }
-          role: { type: Entity, name: GlobalRole }
-
   # Actions follow the action-group convention via naming prefix
   actions:
-    # Ticket
-    createTicket:
+    # Tenant-scoped action groups (apply to all principal types)
+    Create:
       appliesTo:
-        principalTypes: [User]
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+        resourceTypes: [Ticket, File, Event]
+    Delete:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+        resourceTypes: [Ticket, File, Event]
+    Find:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+        resourceTypes: [Ticket, File, Event]
+    Get:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+        resourceTypes: [Ticket, File, Event]
+    Update:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+        resourceTypes: [Ticket, File, Event]
+    BatchUpdate:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+        resourceTypes: [Ticket, File, Event]
+
+    # Globally-scoped action groups (apply to global principals only)
+    GlobalCreate:
+      appliesTo:
+        principalTypes: [User, GlobalRole]
+        resourceTypes: [Ticket, File, Event]
+    GlobalDelete:
+      appliesTo:
+        principalTypes: [User, GlobalRole]
+        resourceTypes: [Ticket, File, Event]
+    GlobalFind:
+      appliesTo:
+        principalTypes: [User, GlobalRole]
+        resourceTypes: [Ticket, File, Event]
+    GlobalGet:
+      appliesTo:
+        principalTypes: [User, GlobalRole]
+        resourceTypes: [Ticket, File, Event]
+    GlobalUpdate:
+      appliesTo:
+        principalTypes: [User, GlobalRole]
+        resourceTypes: [Ticket, File, Event]
+
+    # Granular entity actions map to action groups via memberOf
+    createTicket:
+      memberOf: [Create]
+      appliesTo:
         resourceTypes: [Ticket]
     deleteTicket:
+      memberOf: [Delete]
       appliesTo:
-        principalTypes: [User]
         resourceTypes: [Ticket]
     getTicket:
+      memberOf: [Get]
       appliesTo:
-        principalTypes: [User]
         resourceTypes: [Ticket]
     findTickets:
+      memberOf: [Find]
       appliesTo:
-        principalTypes: [User]
         resourceTypes: [Ticket]
     updateTicket:
+      memberOf: [Update]
       appliesTo:
-        principalTypes: [User]
         resourceTypes: [Ticket]
     batchUpdateTickets:
+      memberOf: [BatchUpdate]
       appliesTo:
-        principalTypes: [User]
         resourceTypes: [Ticket]
 
-    # Files
     getFile:
+      memberOf: [Get]
       appliesTo:
-        principalTypes: [User]
-        resourceTypes: [Files]
+        resourceTypes: [File]
     deleteFile:
+      memberOf: [Delete]
       appliesTo:
-        principalTypes: [User]
-        resourceTypes: [Files]
+        resourceTypes: [File]

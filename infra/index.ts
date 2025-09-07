@@ -8,11 +8,11 @@ import { AuthorizerWithPolicyStore } from "pulumi-verified-permissions-authorize
 // You can replace the asset directory with your own repository path.
 const authz = new AuthorizerWithPolicyStore("authz", {
   description: "Example AVP stack",
-  avpAssets: {
-    dir: "../packages/provider/examples/avp",
-    actionGroupEnforcement: "warn",
-    requireGuardrails: true,
-    // postDeployCanary: true, // enable when you have canary cases defined
+  verifiedPermissions: {
+    schemaFile: "../packages/provider/examples/avp/schema.yaml",
+    policyDir: "../packages/provider/examples/avp/policies",
+    actionGroupEnforcement: "error",
+    // canaryFile: "../packages/provider/examples/avp/canaries.yaml",
   },
 });
 

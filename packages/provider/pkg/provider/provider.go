@@ -62,15 +62,9 @@ type AuthorizerArgs struct {
     // Optional Cognito configuration. When provided, a Cognito User Pool will be provisioned
     // and configured as the Verified Permissions Identity Source for the created policy store.
     Cognito *CognitoConfig `pulumi:"cognito,optional"`
-    // Optional: AVP schema & policy asset ingestion and validation settings.
-    // When provided, the provider will:
-    //  - Load a Cedar JSON Schema from assets (YAML or JSON file)
-    //  - Validate single-namespace and required entity presence
-    //  - Enforce action-group naming/mapping conventions in warn/error/off mode
-    //  - Apply the schema to the created Policy Store (skip when unchanged)
-    //  - Ingest static Cedar policies from assets/policies (required guardrails enforced)
-    //  - Optionally run post-deploy canary authorization checks
-    AvpAssets *AvpAssetsConfig `pulumi:"avpAssets,optional"`
+    // Verified Permissions schema & policy asset ingestion and validation settings.
+    // See VerifiedPermissionsConfig for details.
+    VerifiedPermissions *VerifiedPermissionsConfig `pulumi:"verifiedPermissions,optional"`
 }
 
 // LambdaConfig exposes a narrow set of tuning knobs for the Lambda authorizer.
@@ -111,8 +105,8 @@ type CognitoOutputs struct {
 
 // DynamoOutputs groups DynamoDB auth table outputs under the `dynamo` object.
 type DynamoOutputs struct {
-    AuthTableArn       pulumi.StringOutput    `pulumi:"AuthTableArn"`
-    AuthTableStreamArn pulumi.StringOutput `pulumi:"AuthTableStreamArn,optional"`
+    AuthTableArn       pulumi.StringOutput `pulumi:"authTableArn"`
+    AuthTableStreamArn pulumi.StringOutput `pulumi:"authTableStreamArn,optional"`
 }
 
 // LambdaOutputs groups Lambda authorizer outputs under the `lambda` object.
@@ -171,8 +165,8 @@ func NewAuthorizerWithPolicyStore(
     }
 
     // 1a) Optional: Apply schema and ingest policies from assets
-    if args.AvpAssets != nil {
-        if err := applySchemaAndPolicies(ctx, name, store, *args.AvpAssets); err != nil {
+    if args.VerifiedPermissions != nil {
+        if err := applySchemaAndPolicies(ctx, name, store, *args.VerifiedPermissions); err != nil {
             return nil, err
         }
     }
@@ -665,68 +659,49 @@ func provisionCognito(
 
 // ------------- AVP schema/policy ingestion & validation -------------
 
-// AvpAssetsConfig configures where the provider should find the AVP schema (YAML or JSON)
+// VerifiedPermissionsConfig configures where the provider should find the AVP schema (YAML or JSON)
 // and Cedar policy files, and how strictly to validate them.
-type AvpAssetsConfig struct {
-    // Directory containing a schema file and a policies/ subfolder.
-    // Relative paths resolve from the Pulumi project root (working directory where `pulumi up` is run).
-    Dir string `pulumi:"dir"`
-    // Optional schema file name relative to Dir. When omitted, the provider searches for
-    // schema.yaml, schema.yml, or schema.json within Dir.
-    SchemaFile *string `pulumi:"schemaFile,optional"`
-    // Glob (recursive) for policy files relative to Dir. Defaults to "policies/**/*.cedar".
-    PoliciesGlob *string `pulumi:"policiesGlob,optional"`
-    // Enforce action-group mapping convention in policies and schema actions: "off" | "warn" | "error" (default: warn).
+type VerifiedPermissionsConfig struct {
+    // Path to schema file (YAML or JSON). YAML is always converted to JSON for validation and upload.
+    SchemaFile *string `pulumi:"schemaFile"`
+    // Directory containing .cedar policy files (recursively discovered).
+    PolicyDir *string `pulumi:"policyDir"`
+    // Enforce PascalCase action groups (including Global* variants): off|warn|error (default: error).
     ActionGroupEnforcement *string `pulumi:"actionGroupEnforcement,optional"`
-    // Require baseline guardrail deny policies to be present (default: true).
-    RequireGuardrails *bool `pulumi:"requireGuardrails,optional"`
-    // If true, run canary authorization checks after policy deployment using cases defined in canaryFile (default: false).
-    PostDeployCanary *bool `pulumi:"postDeployCanary,optional"`
-    // Optional canary tests file (YAML) relative to Dir. When present and postDeployCanary is true,
-    // the provider runs IsAuthorized for each case and fails on mismatch.
+    // Disable installing provider-managed guardrail deny policies (default: false; a warning is emitted when true).
+    DisableGuardrails *bool `pulumi:"disableGuardrails,optional"`
+    // Optional canary YAML file path. When present, canaries are executed post-deploy.
     CanaryFile *string `pulumi:"canaryFile,optional"`
 }
 
-// canonical action group identifiers
+// canonical action group identifiers (PascalCase + Global* variants)
 var canonicalActionGroups = []string{
-    "batchCreate", "create", "batchDelete", "delete", "find", "get", "batchUpdate", "update",
+    "BatchCreate", "Create", "BatchDelete", "Delete", "Find", "Get", "BatchUpdate", "Update",
+    "GlobalBatchCreate", "GlobalCreate", "GlobalBatchDelete", "GlobalDelete", "GlobalFind", "GlobalGet", "GlobalBatchUpdate", "GlobalUpdate",
 }
 
 // applySchemaAndPolicies loads schema/policies from disk, performs validations, applies schema if changed,
 // and creates static policies as Pulumi resources bound to the created policy store.
-func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.PolicyStore, cfg AvpAssetsConfig) error {
-    // Resolve base directory
-    dir := strings.TrimSpace(cfg.Dir)
-    if dir == "" {
-        return fmt.Errorf("avpAssets.dir is required when avpAssets is provided")
+func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.PolicyStore, cfg VerifiedPermissionsConfig) error {
+    // Resolve inputs
+    if cfg.SchemaFile == nil || strings.TrimSpace(*cfg.SchemaFile) == "" {
+        return fmt.Errorf("verifiedPermissions.schemaFile is required")
     }
-    if !filepath.IsAbs(dir) {
+    if cfg.PolicyDir == nil || strings.TrimSpace(*cfg.PolicyDir) == "" {
+        return fmt.Errorf("verifiedPermissions.policyDir is required")
+    }
+    schemaPath := *cfg.SchemaFile
+    if !filepath.IsAbs(schemaPath) {
         cwd, _ := os.Getwd()
-        dir = filepath.Join(cwd, dir)
+        schemaPath = filepath.Join(cwd, schemaPath)
     }
-    if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-        return fmt.Errorf("avpAssets.dir %q not found or not a directory", cfg.Dir)
+    policyDir := *cfg.PolicyDir
+    if !filepath.IsAbs(policyDir) {
+        cwd, _ := os.Getwd()
+        policyDir = filepath.Join(cwd, policyDir)
     }
-
-    // Determine schema file path
-    schemaPath := ""
-    if cfg.SchemaFile != nil && strings.TrimSpace(*cfg.SchemaFile) != "" {
-        schemaPath = *cfg.SchemaFile
-        if !filepath.IsAbs(schemaPath) {
-            schemaPath = filepath.Join(dir, schemaPath)
-        }
-    } else {
-        // search for default names
-        for _, f := range []string{"schema.yaml", "schema.yml", "schema.json"} {
-            p := filepath.Join(dir, f)
-            if _, err := os.Stat(p); err == nil {
-                schemaPath = p
-                break
-            }
-        }
-    }
-    if schemaPath == "" {
-        return fmt.Errorf("no schema file found in %s (looked for schema.yaml|schema.yml|schema.json); set avpAssets.schemaFile to override", dir)
+    if st, err := os.Stat(policyDir); err != nil || !st.IsDir() {
+        return fmt.Errorf("verifiedPermissions.policyDir %q not found or not a directory", *cfg.PolicyDir)
     }
 
     // Read and parse schema (YAML or JSON → JSON string)
@@ -736,7 +711,7 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
     }
 
     // Action-group enforcement (schema-level, based on action names)
-    agMode := strings.ToLower(valueOrDefault(cfg.ActionGroupEnforcement, "warn"))
+    agMode := strings.ToLower(valueOrDefault(cfg.ActionGroupEnforcement, "error"))
     if violations, err := enforceActionGroups(actions, agMode); err != nil {
         return err
     } else if len(violations) > 0 && agMode == "warn" {
@@ -761,32 +736,63 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
         return "ok", nil
     }).(pulumi.StringOutput)
 
-    // Collect policy files
-    policiesGlob := valueOrDefault(cfg.PoliciesGlob, "policies/**/*.cedar")
-    files, err := globRecursive(dir, policiesGlob)
+    // Collect policy files (*.cedar under policyDir)
+    files, err := globRecursive(policyDir, "**/*.cedar")
     if err != nil {
-        return fmt.Errorf("failed to enumerate policies with glob %q: %w", policiesGlob, err)
+        return fmt.Errorf("failed to enumerate policies under %s: %w", policyDir, err)
     }
+    sort.Strings(files)
     if len(files) == 0 {
-        ctx.Log.Warn(fmt.Sprintf("AVP: no policy files matched %q under %s", policiesGlob, dir), &pulumi.LogArgs{})
+        ctx.Log.Warn(fmt.Sprintf("AVP: no .cedar policy files found under %s", policyDir), &pulumi.LogArgs{})
     }
 
-    // Guardrails presence check
-    reqGuardrails := true
-    if cfg.RequireGuardrails != nil {
-        reqGuardrails = *cfg.RequireGuardrails
+    // Install provider-managed guardrails unless disabled
+    disableGuardrails := false
+    if cfg.DisableGuardrails != nil {
+        disableGuardrails = *cfg.DisableGuardrails
     }
-    if reqGuardrails {
-        missing := missingGuardrailFiles(files)
-        if len(missing) > 0 {
-            return fmt.Errorf("required guardrail policy files missing: %s", strings.Join(missing, ", "))
+    if disableGuardrails {
+        ctx.Log.Warn("Guardrails disabled: provider will not install deny guardrail policies", &pulumi.LogArgs{})
+    }
+    // Basic schema attribute check: guardrails expect a 'tenantId' attribute on principals/resources.
+    if !disableGuardrails {
+        var top map[string]any
+        if err := json.Unmarshal([]byte(cedarJSON), &top); err == nil {
+            hasTenant := false
+            if nsBody, ok := top[ns].(map[string]any); ok {
+                if entities, ok := nsBody["entityTypes"].(map[string]any); ok {
+                    for _, v := range entities {
+                        if m, ok := v.(map[string]any); ok {
+                            if shape, ok := m["shape"].(map[string]any); ok {
+                                if attrs, ok := shape["attributes"].(map[string]any); ok {
+                                    if _, ok := attrs["tenantId"]; ok { hasTenant = true; break }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if !hasTenant {
+                ctx.Log.Warn("Guardrails require 'tenantId' attribute on entities; skipping guardrail installation", &pulumi.LogArgs{})
+                disableGuardrails = true
+            }
         }
     }
 
-    // Create static policies as child resources
-    // Deterministic order for stable diffs
-    sort.Strings(files)
+    // Create static policies as child resources (deterministic order)
     policyIDs := []pulumi.StringOutput{}
+    guardrailText := buildGuardrails(ns)
+    if !disableGuardrails && strings.TrimSpace(guardrailText) != "" {
+        stmt := pulumi.All(schemaApplied).ApplyT(func(_ []interface{}) string { return guardrailText }).(pulumi.StringOutput)
+        pol, err := awsvp.NewPolicy(ctx, fmt.Sprintf("%s-guardrails", name), &awsvp.PolicyArgs{
+            PolicyStoreId: store.ID(),
+            Definition: &awsvp.PolicyDefinitionArgs{Static: &awsvp.PolicyDefinitionStaticArgs{Statement: stmt}},
+        }, pulumi.Parent(store))
+        if err != nil {
+            return fmt.Errorf("failed to create guardrail policies: %w", err)
+        }
+        policyIDs = append(policyIDs, pol.ID().ToStringOutput())
+    }
     for i, f := range files {
         b, err := os.ReadFile(f)
         if err != nil {
@@ -814,12 +820,18 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
         policyIDs = append(policyIDs, pol.ID().ToStringOutput())
     }
 
-    // Optional: post-deploy canary checks
-    if cfg.PostDeployCanary != nil && *cfg.PostDeployCanary {
+    // Optional: canary checks only when a file is provided
+    if cfg.CanaryFile != nil && strings.TrimSpace(*cfg.CanaryFile) != "" {
+        // Resolve to absolute path relative to project root (cwd)
+        cf := *cfg.CanaryFile
+        if !filepath.IsAbs(cf) {
+            cwd, _ := os.Getwd()
+            cf = filepath.Join(cwd, cf)
+        }
         // Chain canaries to run after policies (gated by schemaApplied and policy IDs) and export status so failures surface.
         canaryDeps := append([]pulumi.Output{schemaApplied}, toOutputs(policyIDs)...)
         canaryStatus := pulumi.All(canaryDeps...).ApplyT(func(_ []interface{}) (string, error) {
-            if err := runCanaries(ctx, store, dir, cfg.CanaryFile); err != nil {
+            if err := runCanaries(ctx, store, cf); err != nil {
                 return "", err
             }
             return "ok", nil
@@ -922,6 +934,12 @@ func loadAndValidateSchema(ctx *pulumi.Context, schemaPath string) (string, stri
     if err != nil {
         return "", "", nil, fmt.Errorf("failed to encode schema as JSON: %w", err)
     }
+    // Size validation per AVP limit: 100,000 bytes
+    if sz := len(b); sz > 100000 {
+        return "", "", nil, fmt.Errorf("schema JSON size %d exceeds 100,000 byte limit", sz)
+    } else if sz >= 95000 {
+        ctx.Log.Warn(fmt.Sprintf("schema JSON size %d is >= 95%% of 100,000 byte limit", sz), &pulumi.LogArgs{})
+    }
     return string(b), ns, acts, nil
 }
 
@@ -931,16 +949,19 @@ func enforceActionGroups(actions []string, mode string) ([]string, error) {
     if strings.EqualFold(mode, "off") {
         return nil, nil
     }
-    groups := map[string]struct{}{}
-    for _, g := range canonicalActionGroups {
-        groups[g] = struct{}{}
+    // Lowercased canonical prefixes for matching
+    canon := make([]string, len(canonicalActionGroups))
+    for i, g := range canonicalActionGroups {
+        canon[i] = strings.ToLower(g)
     }
     bad := []string{}
     for _, a := range actions {
-        g := leadingCamelSegment(a)
-        if _, ok := groups[g]; !ok {
-            bad = append(bad, a)
+        al := strings.ToLower(a)
+        ok := false
+        for _, g := range canon {
+            if strings.HasPrefix(al, g) { ok = true; break }
         }
+        if !ok { bad = append(bad, a) }
     }
     if len(bad) == 0 {
         return nil, nil
@@ -950,25 +971,6 @@ func enforceActionGroups(actions []string, mode string) ([]string, error) {
     }
     // warn
     return bad, nil
-}
-
-// leadingCamelSegment returns the leading lowerCamelCase verb segment from an action name.
-// Examples: createTicket -> create; batchDeleteFiles -> batchDelete; GetTicket -> get
-func leadingCamelSegment(s string) string {
-    if s == "" {
-        return s
-    }
-    // Normalize to lower camel: ensure first rune is lowercased for comparison
-    rs := []rune(s)
-    rs[0] = []rune(strings.ToLower(string(rs[0])))[0]
-    s = string(rs)
-    // Identify transition from lower→upper (verb boundary to resource)
-    for i := 1; i < len(s); i++ {
-        if s[i] >= 'A' && s[i] <= 'Z' {
-            return s[:i]
-        }
-    }
-    return s
 }
 
 // putSchemaIfChanged retrieves existing schema and applies only when content differs.
@@ -1014,19 +1016,12 @@ func putSchemaIfChanged(ctx *pulumi.Context, policyStoreId string, cedarJSON str
 //     action: "getTicket"
 //     resource: { entityType: "Ticket", entityId: "t-1" }
 //     expect: "ALLOW" | "DENY"
-func runCanaries(ctx *pulumi.Context, store *awsvp.PolicyStore, dir string, canaryFile *string) error {
+func runCanaries(ctx *pulumi.Context, store *awsvp.PolicyStore, canaryPath string) error {
     if ctx.DryRun() {
         ctx.Log.Info("AVP canary: preview mode; skipping canary execution", &pulumi.LogArgs{})
         return nil
     }
-    path := filepath.Join(dir, "canaries.yaml")
-    if canaryFile != nil && *canaryFile != "" {
-        p := *canaryFile
-        if !filepath.IsAbs(p) {
-            p = filepath.Join(dir, p)
-        }
-        path = p
-    }
+    path := canaryPath
     b, err := os.ReadFile(path)
     if err != nil {
         return fmt.Errorf("failed to read canary file %s: %w", path, err)
@@ -1164,5 +1159,64 @@ func toOutputs(ins []pulumi.StringOutput) []pulumi.Output {
         outs = append(outs, in)
     }
     return outs
+}
+
+// buildGuardrails returns a consolidated Cedar policy text that implements the reviewed guardrails.
+func buildGuardrails(namespace string) string {
+    ns := namespace
+    return fmt.Sprintf(`
+// Deny Global* actions for principals that have tenantId
+forbid(principal, action, resource)
+when {
+    principal has tenantId && (
+        action in %s::ActionGroup::"GlobalBatchCreate" ||
+        action in %s::ActionGroup::"GlobalCreate" ||
+        action in %s::ActionGroup::"GlobalBatchDelete" ||
+        action in %s::ActionGroup::"GlobalDelete" ||
+        action in %s::ActionGroup::"GlobalFind" ||
+        action in %s::ActionGroup::"GlobalGet" ||
+        action in %s::ActionGroup::"GlobalBatchUpdate" ||
+        action in %s::ActionGroup::"GlobalUpdate"
+    )
+};
+
+// Deny tenant-scoped actions when resource lacks tenantId
+forbid(principal, action, resource)
+when {
+    !(resource has tenantId) && (
+        action in %s::ActionGroup::"BatchCreate" ||
+        action in %s::ActionGroup::"Create" ||
+        action in %s::ActionGroup::"BatchDelete" ||
+        action in %s::ActionGroup::"Delete" ||
+        action in %s::ActionGroup::"Find" ||
+        action in %s::ActionGroup::"Get" ||
+        action in %s::ActionGroup::"BatchUpdate" ||
+        action in %s::ActionGroup::"Update"
+    )
+};
+
+// Deny actions not using the approved action-group set
+forbid(principal, action, resource)
+unless {
+    action in %s::ActionGroup::"BatchCreate" ||
+    action in %s::ActionGroup::"Create" ||
+    action in %s::ActionGroup::"BatchDelete" ||
+    action in %s::ActionGroup::"Delete" ||
+    action in %s::ActionGroup::"Find" ||
+    action in %s::ActionGroup::"Get" ||
+    action in %s::ActionGroup::"BatchUpdate" ||
+    action in %s::ActionGroup::"Update" ||
+    action in %s::ActionGroup::"GlobalBatchCreate" ||
+    action in %s::ActionGroup::"GlobalCreate" ||
+    action in %s::ActionGroup::"GlobalBatchDelete" ||
+    action in %s::ActionGroup::"GlobalDelete" ||
+    action in %s::ActionGroup::"GlobalFind" ||
+    action in %s::ActionGroup::"GlobalGet" ||
+    action in %s::ActionGroup::"GlobalBatchUpdate" ||
+    action in %s::ActionGroup::"GlobalUpdate"
+};
+`, ns, ns, ns, ns, ns, ns, ns, ns,
+        ns, ns, ns, ns, ns, ns, ns, ns,
+        ns, ns, ns, ns, ns, ns, ns, ns)
 }
 

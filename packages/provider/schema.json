@@ -17,19 +17,17 @@
     "verified-permissions-authorizer:index:AuthorizerWithPolicyStore": {
       "isComponent": true,
       "inputProperties": {
-        "avpAssets": {
+        "verifiedPermissions": {
           "type": "object",
-          "description": "Optional AVP schema and policy ingestion settings. When provided, the component will load a schema (YAML/JSON) and Cedar policy files from the given directory, validate them, apply the schema to the policy store (skipping when unchanged), and create static policies. It can also run optional post-deploy canary authorization checks.",
+          "description": "AVP schema and policy ingestion settings. The component will load a schema (YAML/JSON), validate and convert it to JSON, enforce single namespace, validate canonical PascalCase action groups (including Global* variants), apply the schema if changed, create static policies from the policyDir, and (when guardrails are enabled) install baseline deny guardrails. Optionally validates a canary file.",
           "properties": {
-            "dir": { "type": "string", "description": "Directory containing schema file and policies/ subfolder. Relative to Pulumi project root when not absolute.", "plain": true },
-            "schemaFile": { "type": "string", "description": "Optional schema filename relative to dir. Defaults to schema.yaml|schema.yml|schema.json.", "plain": true },
-            "policiesGlob": { "type": "string", "description": "Glob for policy files relative to dir (supports **). Defaults to policies/**/*.cedar.", "plain": true },
-            "actionGroupEnforcement": { "type": "string", "enum": ["off", "warn", "error"], "default": "warn", "description": "Validate that action names map to canonical action groups (batchCreate, create, batchDelete, delete, find, get, batchUpdate, update)." },
-            "requireGuardrails": { "type": "boolean", "default": true, "description": "Require baseline guardrail deny policies (01-deny-tenant-mismatch.cedar, 02-deny-tenant-role-global-admin.cedar)." },
-            "postDeployCanary": { "type": "boolean", "default": false, "description": "Run post-deploy canary authorization checks defined in canaryFile (YAML)." },
-            "canaryFile": { "type": "string", "description": "YAML file name relative to dir describing canary cases (default: canaries.yaml)." }
+            "actionGroupEnforcement": { "type": "string", "enum": ["off", "warn", "error"], "default": "error", "description": "Enforce canonical PascalCase action groups: Create/Delete/Find/Get/Update plus Batch* variants and Global* equivalents." },
+            "canaryFile": { "type": "string", "description": "Optional YAML file with canary cases. When provided, canaries are executed post-deploy. Path is resolved relative to the Pulumi project root when not absolute." },
+            "disableGuardrails": { "type": "boolean", "default": false, "description": "Disable installing provider-managed guardrail deny policies. Not recommended; a warning is emitted when true." },
+            "policyDir": { "type": "string", "description": "Directory containing .cedar policy files (recursively discovered).", "plain": true },
+            "schemaFile": { "type": "string", "description": "Path to schema file (YAML or JSON). YAML is always converted to canonical JSON before validation.", "plain": true }
           },
-          "required": ["dir"]
+          "required": ["schemaFile", "policyDir"]
         },
         "cognito": {
           "type": "object",
@@ -129,11 +127,11 @@
           "description": "DynamoDB auth table outputs.",
           "additionalProperties": false,
           "properties": {
-            "AuthTableArn": {
+            "authTableArn": {
               "type": "string",
               "description": "ARN of the DynamoDB auth table"
             },
-            "AuthTableStreamArn": {
+            "authTableStreamArn": {
               "type": "string",
               "description": "ARN of the DynamoDB auth table stream (when streams are enabled)"
             }

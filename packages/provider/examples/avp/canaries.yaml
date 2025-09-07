@@ -1,9 +1,12 @@
 cases:
+  # Deny: non-group action name should be rejected by guardrail
   - principal: { entityType: User, entityId: user-1 }
-    action: getTicket
+    action: Approve
     resource: { entityType: Ticket, entityId: t-1 }
-    expect: ALLOW
-  - principal: { entityType: User, entityId: user-1 }
-    action: getFile
-    resource: { entityType: Files, entityId: f-1 }
+    expect: DENY
+
+  # Deny: Global* actions when principal has tenantId (using TenantGrant principal)
+  - principal: { entityType: TenantGrant, entityId: tg-1 }
+    action: GlobalGet
+    resource: { entityType: Ticket, entityId: t-1 }
     expect: DENY

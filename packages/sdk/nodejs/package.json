@@ -10,6 +10,9 @@
   "files": [
     "dist"
   ],
+  "bin": {
+    "avp-validate": "dist/bin/avp-validate.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -20,9 +23,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsgo --module ES2022 --target ES2022 --moduleResolution Bundler --outDir dist --rootDir src --declaration true src/index.ts && mv dist/index.js dist/index.mjs",
+    "build": "tsgo --module ES2022 --target ES2022 --moduleResolution Bundler --outDir dist --rootDir src --declaration true src/index.ts src/bin/avp-validate.ts src/types.ts && mv dist/index.js dist/index.mjs && mv dist/bin/avp-validate.js dist/bin/avp-validate.mjs",
     "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit --module ES2022 --target ES2022 --moduleResolution Bundler --lib ES2022,DOM src/index.ts",
+    "typecheck": "tsc --noEmit --module ES2022 --target ES2022 --moduleResolution Bundler --lib ES2022,DOM src/index.ts src/types.ts",
     "lint": "eslint src --max-warnings 0",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
@@ -31,10 +34,12 @@
   },
   "dependencies": {
     "@pulumi/pulumi": "^3.0.0",
-    "verified-permissions-lambda-authorizer": "workspace:*"
+    "verified-permissions-lambda-authorizer": "workspace:*",
+    "yaml": "^2.5.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    
     "@typescript-eslint/eslint-plugin": "^8.8.1",
     "@typescript-eslint/parser": "^8.8.1",
     "eslint": "^8.57.0",

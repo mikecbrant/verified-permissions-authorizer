@@ -74,15 +74,11 @@ if (!et || typeof et !== "object") {
 const requiredPrincipals = [
   "Tenant",
   "User",
-  "Group",
   "Role",
   "GlobalRole",
   "TenantGrant",
 ];
-const requiredResources = ["Event", "Files", "Grant", "GlobalGrant", "Ticket"];
-const missing = [...requiredPrincipals, ...requiredResources].filter(
-  (k) => !(k in et),
-);
+const missing = requiredPrincipals.filter((k) => !(k in et));
 if (missing.length) {
   console.error(`Missing required entity types: ${missing.join(", ")}`);
   process.exit(2);
@@ -90,16 +86,29 @@ if (missing.length) {
 // Action-group check
 const actions = Object.keys(body?.actions ?? {});
 const groups = new Set([
-  "batchCreate",
-  "create",
-  "batchDelete",
-  "delete",
-  "find",
-  "get",
-  "batchUpdate",
-  "update",
+  "BatchCreate",
+  "Create",
+  "BatchDelete",
+  "Delete",
+  "Find",
+  "Get",
+  "BatchUpdate",
+  "Update",
+  "GlobalBatchCreate",
+  "GlobalCreate",
+  "GlobalBatchDelete",
+  "GlobalDelete",
+  "GlobalFind",
+  "GlobalGet",
+  "GlobalBatchUpdate",
+  "GlobalUpdate",
 ]);
-const bad = actions.filter((a) => !groups.has(leadingCamel(a)));
+const matchesCanonical = (s: string): boolean => {
+  const lower = s.toLowerCase();
+  for (const g of groups) if (lower.startsWith(String(g).toLowerCase())) return true;
+  return false;
+};
+const bad = actions.filter((a) => !matchesCanonical(a));
 if (bad.length) {
   const msg = `Actions not aligned to canonical action groups: ${bad.join(", ")}`;
   if (mode === "error") {
@@ -109,36 +118,8 @@ if (bad.length) {
   console.warn(`[warn] ${msg}`);
 }
 
-// Guardrails presence
-const requiredGuardrails = [
-  "01-deny-tenant-mismatch.cedar",
-  "02-deny-tenant-role-global-admin.cedar",
-];
-const found = new Set<string>();
-for (const f of requiredGuardrails) {
-  try {
-    statSync(join(base, "policies", f));
-    found.add(f);
-  } catch {}
-}
-const guardMissing = requiredGuardrails.filter((f) => !found.has(f));
-if (guardMissing.length) {
-  console.error(
-    `Missing required guardrail policies under policies/: ${guardMissing.join(", ")}`,
-  );
-  process.exit(2);
-}
-
 console.log(
-  `OK: ${ns} with ${Object.keys(et).length} entities, ${actions.length} actions, guardrails present`,
+  `OK: ${ns} with ${Object.keys(et).length} entities and ${actions.length} actions`,
 );
 
-function leadingCamel(s: string): string {
-  if (!s) return s;
-  s = s[0].toLowerCase() + s.slice(1);
-  for (let i = 1; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c >= 65 && c <= 90) return s.slice(0, i);
-  }
-  return s;
-}
+// (no helper needed beyond matchesCanonical)

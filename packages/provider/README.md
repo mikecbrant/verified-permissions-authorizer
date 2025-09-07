@@ -24,20 +24,18 @@ Interface (stable)
       - `from` (string, required) — From address
       - `replyToEmail` (string, optional)
       - `configurationSet` (string, optional)
-  - `avpAssets?` — ingest AVP schema and Cedar policies from your repo and validate them
-    - `dir` (string, required) — directory containing a schema file and a `policies/` subfolder. Paths resolve relative to the Pulumi project root (where you run `pulumi up`).
-    - `schemaFile?` (string) — optional file name relative to `dir`. Defaults to `schema.yaml`/`schema.yml`/`schema.json`.
-    - `policiesGlob?` (string) — glob for policy files relative to `dir` (supports `**`). Default: `policies/**/*.cedar`.
-    - `actionGroupEnforcement?` ("off" | "warn" | "error"; default `"warn"`) — validates that schema action names map to canonical action groups (`batchCreate`, `create`, `batchDelete`, `delete`, `find`, `get`, `batchUpdate`, `update`).
-    - `requireGuardrails?` (boolean; default `true`) — fails if required guardrail deny policies are missing.
-    - `postDeployCanary?` (boolean; default `false`) — when `true`, runs basic `IsAuthorized` checks from `canaryFile` after policies are created.
-    - `canaryFile?` (string) — YAML file relative to `dir` describing canary checks. Default: `canaries.yaml`.
+  - `verifiedPermissions?` — ingest AVP schema and Cedar policies and validate them
+    - `schemaFile` (string, required) — path to schema file (`.yaml`/`.yml` or `.json`). YAML is always converted to canonical JSON before validation and upload.
+    - `policyDir` (string, required) — directory containing `.cedar` policy files (recursively discovered).
+    - `actionGroupEnforcement?` ("off" | "warn" | "error"; default `"error"`) — enforces canonical PascalCase action groups (Create/Delete/Find/Get/Update and Batch* variants) and their Global* equivalents.
+    - `disableGuardrails?` (boolean; default `false`) — when `true`, the provider will not install deny guardrail policies. A warning is emitted as this posture is not recommended.
+    - `canaryFile?` (string) — optional YAML file with canary authorization cases to execute post-deploy.
 - Outputs:
   - Top-level:
     - `policyStoreId`, `policyStoreArn`, `parameters?`
   - Grouped (mirrors inputs):
     - `lambda`: `{ authorizerFunctionArn, roleArn }`
-    - `dynamo`: `{ AuthTableArn, AuthTableStreamArn? }`
+    - `dynamo`: `{ authTableArn, authTableStreamArn? }`
     - `cognito` (when configured): `{ userPoolId?, userPoolArn?, userPoolClientIds?[] }`
 
 Lambda contract (fixed)
@@ -84,26 +82,22 @@ See the root README for release automation details.
 
 ## AVP schema and policy assets
 
-- Place your schema and policies under a single directory (`avpAssets.dir`).
-- The provider accepts schema in Cedar JSON Schema format expressed as YAML (`schema.yaml`/`schema.yml`) or raw JSON (`schema.json`).
-- AVP requires a single namespace per schema. This provider enforces that and fails when multiple namespaces are present.
-- Required entities (must exist):
-  - Principals: `Tenant`, `User`, `Group`, `Role`, `GlobalRole`, `TenantGrant`
-  - Resources: `Event`, `Files`, `Grant`, `GlobalGrant`, `Ticket`
+- AVP requires a single namespace per schema; this provider enforces that and fails when multiple namespaces are present.
+- Required principals: `Tenant`, `User`, `Role`, `GlobalRole`, `TenantGrant`. Example resources (e.g., `Ticket`, `File`) are intentionally not enforced at the provider level.
 - Hierarchy expectations:
-  - `Tenant` and `Group` should include themselves in `memberOfTypes` to enable nested principals.
-  - `User` and `Role` have no hierarchy; a user can be in many roles and groups.
+  - `Tenant` must be a homogeneous tree (its `memberOfTypes` should include only `Tenant`).
+  - `User` and `Role` have no hierarchy; a user can be in many roles.
 - Action-group convention:
-  - Keep actions per-entity (for example, `createTicket`, `deleteTicket`, `getFile`).
-  - The leading verb maps to a canonical action group: `batchCreate`, `create`, `batchDelete`, `delete`, `find`, `get`, `batchUpdate`, `update`.
-  - Set `avpAssets.actionGroupEnforcement` to `"error"` to fail deploys when action names don’t follow this convention.
+  - Define actions per-entity (for example, `createTicket`, `deleteTicket`, `getFile`). The leading verb maps to a canonical PascalCase action group: `Create`, `Delete`, `Find`, `Get`, `Update` and their `Batch*` variants.
+  - A globally-scoped set exists with the `Global*` prefix (for cross-tenant access): `GlobalCreate`, `GlobalDelete`, `GlobalFind`, `GlobalGet`, `GlobalUpdate` (plus `GlobalBatch*` variants).
+  - Enforcement occurs when `actionGroupEnforcement` is enabled (default is `error`).
 
-### Guardrail policies (required)
+- Guardrails: When guardrails are enabled (default), the provider installs a consolidated deny policy that:
+  - Denies `Global*` actions when the principal has a `tenantId`.
+  - Denies tenant-scoped actions on resources missing `tenantId`.
+  - Denies actions that are not in the approved action-group set.
 
-Place the following files under `policies/` (exact file names required when `requireGuardrails=true`):
-
-- `01-deny-tenant-mismatch.cedar` — explicit deny when `principal.tenantId != resource.tenantId`.
-- `02-deny-tenant-role-global-admin.cedar` — explicit deny when a tenant-scoped role attempts a globally-scoped admin action.
+> Cedar patterns primer: see https://docs.cedarpolicy.com/overview/patterns.html
 
 ### Examples
 
@@ -115,17 +109,11 @@ An example set is included at `packages/provider/examples/avp`:
 
 ### Local validation (no AWS)
 
-We ship a tiny validator script to catch common issues before `pulumi up`:
+The SDK ships a CLI validator `avp-validate` that mirrors the provider’s validations (schema checks, action-group enforcement, policy syntax scan, and canary structure):
 
 ```
-pnpm validate:avp --dir packages/provider/examples/avp
+npx avp-validate --schema ./packages/provider/examples/avp/schema.yaml --policyDir ./packages/provider/examples/avp/policies --mode error
 ```
-
-This checks:
-
-- Single namespace and required entity presence
-- Action group naming
-- Required guardrail policy files present
 
 ### CI validation
 
@@ -139,11 +127,11 @@ import { AuthorizerWithPolicyStore } from "pulumi-verified-permissions-authorize
 
 const authz = new AuthorizerWithPolicyStore("authz", {
   description: "Ticketing policy store",
-  avpAssets: {
-    dir: "./packages/provider/examples/avp",
-    actionGroupEnforcement: "warn",
-    requireGuardrails: true,
-    // postDeployCanary: true,
+  verifiedPermissions: {
+    schemaFile: "./packages/provider/examples/avp/schema.yaml",
+    policyDir: "./packages/provider/examples/avp/policies",
+    actionGroupEnforcement: "error",
+    // canaryFile: "./packages/provider/examples/avp/canaries.yaml",
   },
 });
 

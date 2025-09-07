@@ -1,0 +1,130 @@
+ticketing-${project}-${stack}:
+  # Example Cedar JSON schema expressed in YAML. Single namespace is required by AVP.
+  entityTypes:
+    Tenant:
+      # Enable nested tenants (tree)
+      memberOfTypes: [Tenant]
+      shape:
+        type: Record
+        attributes:
+          name: { type: String }
+
+    User:
+      # Users can belong to many Groups and Tenants; Roles are decorated at auth time
+      memberOfTypes: [Group, Tenant]
+      shape:
+        type: Record
+        attributes:
+          email: { type: String }
+          displayName: { type: String }
+          tenantId: { type: String }
+
+    Group:
+      # Enable nested groups (tree)
+      memberOfTypes: [Group]
+      shape:
+        type: Record
+        attributes:
+          name: { type: String }
+          tenantId: { type: String }
+
+    Role:
+      # No hierarchy for roles
+      shape:
+        type: Record
+        attributes:
+          name: { type: String }
+
+    GlobalRole:
+      shape:
+        type: Record
+        attributes:
+          name: { type: String }
+
+    TenantGrant:
+      shape:
+        type: Record
+        attributes:
+          user: { type: Entity, name: User }
+          role: { type: Entity, name: Role }
+          tenant: { type: Entity, name: Tenant }
+
+    # Resources
+    Ticket:
+      memberOfTypes: [Tenant]
+      shape:
+        type: Record
+        attributes:
+          title: { type: String }
+          status: { type: String }
+          assignee: { type: Entity, name: User }
+          tenantId: { type: String }
+
+    Event:
+      memberOfTypes: [Tenant]
+      shape:
+        type: Record
+        attributes:
+          name: { type: String }
+          tenantId: { type: String }
+
+    Files:
+      memberOfTypes: [Tenant]
+      shape:
+        type: Record
+        attributes:
+          path: { type: String }
+          tenantId: { type: String }
+
+    Grant:
+      shape:
+        type: Record
+        attributes:
+          user: { type: Entity, name: User }
+          role: { type: Entity, name: Role }
+          tenant: { type: Entity, name: Tenant }
+
+    GlobalGrant:
+      shape:
+        type: Record
+        attributes:
+          user: { type: Entity, name: User }
+          role: { type: Entity, name: GlobalRole }
+
+  # Actions follow the action-group convention via naming prefix
+  actions:
+    # Ticket
+    createTicket:
+      appliesTo:
+        principalTypes: [User]
+        resourceTypes: [Ticket]
+    deleteTicket:
+      appliesTo:
+        principalTypes: [User]
+        resourceTypes: [Ticket]
+    getTicket:
+      appliesTo:
+        principalTypes: [User]
+        resourceTypes: [Ticket]
+    findTickets:
+      appliesTo:
+        principalTypes: [User]
+        resourceTypes: [Ticket]
+    updateTicket:
+      appliesTo:
+        principalTypes: [User]
+        resourceTypes: [Ticket]
+    batchUpdateTickets:
+      appliesTo:
+        principalTypes: [User]
+        resourceTypes: [Ticket]
+
+    # Files
+    getFile:
+      appliesTo:
+        principalTypes: [User]
+        resourceTypes: [Files]
+    deleteFile:
+      appliesTo:
+        principalTypes: [User]
+        resourceTypes: [Files]

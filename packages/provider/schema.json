@@ -17,6 +17,20 @@
     "verified-permissions-authorizer:index:AuthorizerWithPolicyStore": {
       "isComponent": true,
       "inputProperties": {
+        "avpAssets": {
+          "type": "object",
+          "description": "Optional AVP schema and policy ingestion settings. When provided, the component will load a schema (YAML/JSON) and Cedar policy files from the given directory, validate them, apply the schema to the policy store (skipping when unchanged), and create static policies. It can also run optional post-deploy canary authorization checks.",
+          "properties": {
+            "dir": { "type": "string", "description": "Directory containing schema file and policies/ subfolder. Relative to Pulumi project root when not absolute.", "plain": true },
+            "schemaFile": { "type": "string", "description": "Optional schema filename relative to dir. Defaults to schema.yaml|schema.yml|schema.json.", "plain": true },
+            "policiesGlob": { "type": "string", "description": "Glob for policy files relative to dir (supports **). Defaults to policies/**/*.cedar.", "plain": true },
+            "actionGroupEnforcement": { "type": "string", "enum": ["off", "warn", "error"], "default": "warn", "description": "Validate that action names map to canonical action groups (batchCreate, create, batchDelete, delete, find, get, batchUpdate, update)." },
+            "requireGuardrails": { "type": "boolean", "default": true, "description": "Require baseline guardrail deny policies (01-deny-tenant-mismatch.cedar, 02-deny-tenant-role-global-admin.cedar)." },
+            "postDeployCanary": { "type": "boolean", "default": false, "description": "Run post-deploy canary authorization checks defined in canaryFile (YAML)." },
+            "canaryFile": { "type": "string", "description": "YAML file name relative to dir describing canary cases (default: canaries.yaml)." }
+          },
+          "required": ["dir"]
+        },
         "cognito": {
           "type": "object",
           "description": "Provision an AWS Cognito User Pool and configure it as the Verified Permissions identity source.",

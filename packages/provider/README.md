@@ -24,6 +24,14 @@ Interface (stable)
       - `from` (string, required) — From address
       - `replyToEmail` (string, optional)
       - `configurationSet` (string, optional)
+  - `avpAssets?` — ingest AVP schema and Cedar policies from your repo and validate them
+    - `dir` (string, required) — directory containing a schema file and a `policies/` subfolder. Paths resolve relative to the Pulumi project root (where you run `pulumi up`).
+    - `schemaFile?` (string) — optional file name relative to `dir`. Defaults to `schema.yaml`/`schema.yml`/`schema.json`.
+    - `policiesGlob?` (string) — glob for policy files relative to `dir` (supports `**`). Default: `policies/**/*.cedar`.
+    - `actionGroupEnforcement?` ("off" | "warn" | "error"; default `"warn"`) — validates that schema action names map to canonical action groups (`batchCreate`, `create`, `batchDelete`, `delete`, `find`, `get`, `batchUpdate`, `update`).
+    - `requireGuardrails?` (boolean; default `true`) — fails if required guardrail deny policies are missing.
+    - `postDeployCanary?` (boolean; default `false`) — when `true`, runs basic `IsAuthorized` checks from `canaryFile` after policies are created.
+    - `canaryFile?` (string) — YAML file relative to `dir` describing canary checks. Default: `canaries.yaml`.
 - Outputs:
   - Top-level:
     - `policyStoreId`, `policyStoreArn`, `parameters?`
@@ -73,3 +81,76 @@ Publishing
 - The Node SDK is published from `packages/sdk/nodejs` to npm as `pulumi-verified-permissions-authorizer`.
 
 See the root README for release automation details.
+
+## AVP schema and policy assets
+
+- Place your schema and policies under a single directory (`avpAssets.dir`).
+- The provider accepts schema in Cedar JSON Schema format expressed as YAML (`schema.yaml`/`schema.yml`) or raw JSON (`schema.json`).
+- AVP requires a single namespace per schema. This provider enforces that and fails when multiple namespaces are present.
+- Required entities (must exist):
+  - Principals: `Tenant`, `User`, `Group`, `Role`, `GlobalRole`, `TenantGrant`
+  - Resources: `Event`, `Files`, `Grant`, `GlobalGrant`, `Ticket`
+- Hierarchy expectations:
+  - `Tenant` and `Group` should include themselves in `memberOfTypes` to enable nested principals.
+  - `User` and `Role` have no hierarchy; a user can be in many roles and groups.
+- Action-group convention:
+  - Keep actions per-entity (for example, `createTicket`, `deleteTicket`, `getFile`).
+  - The leading verb maps to a canonical action group: `batchCreate`, `create`, `batchDelete`, `delete`, `find`, `get`, `batchUpdate`, `update`.
+  - Set `avpAssets.actionGroupEnforcement` to `"error"` to fail deploys when action names don’t follow this convention.
+
+### Guardrail policies (required)
+
+Place the following files under `policies/` (exact file names required when `requireGuardrails=true`):
+
+- `01-deny-tenant-mismatch.cedar` — explicit deny when `principal.tenantId != resource.tenantId`.
+- `02-deny-tenant-role-global-admin.cedar` — explicit deny when a tenant-scoped role attempts a globally-scoped admin action.
+
+### Examples
+
+An example set is included at `packages/provider/examples/avp`:
+
+- Schema: `packages/provider/examples/avp/schema.yaml` (namespace key shows a suggested pattern using `{project}-{stack}` for uniqueness)
+- Policies: `packages/provider/examples/avp/policies/*.cedar`
+- Canaries: `packages/provider/examples/avp/canaries.yaml`
+
+### Local validation (no AWS)
+
+We ship a tiny validator script to catch common issues before `pulumi up`:
+
+```
+pnpm validate:avp --dir packages/provider/examples/avp
+```
+
+This checks:
+
+- Single namespace and required entity presence
+- Action group naming
+- Required guardrail policy files present
+
+### CI validation
+
+This repo includes a GitHub Actions workflow `.github/workflows/avp-validate.yml` that runs the same local validation on every PR. You can extend it to also deploy an ephemeral stack and run canaries.
+
+### Using from a Pulumi program
+
+```ts
+import * as pulumi from "@pulumi/pulumi";
+import { AuthorizerWithPolicyStore } from "pulumi-verified-permissions-authorizer";
+
+const authz = new AuthorizerWithPolicyStore("authz", {
+  description: "Ticketing policy store",
+  avpAssets: {
+    dir: "./packages/provider/examples/avp",
+    actionGroupEnforcement: "warn",
+    requireGuardrails: true,
+    // postDeployCanary: true,
+  },
+});
+
+export const policyStoreId = authz.policyStoreId;
+```
+
+### Namespace uniqueness
+
+We recommend incorporating `{project}-{stack}` in your schema’s namespace to avoid collisions across stacks in a Region. For example: `ticketing-{project}-{stack}`. The provider does not currently rewrite namespaces; it validates and applies the schema as provided.
+

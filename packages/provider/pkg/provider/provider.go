@@ -1,11 +1,22 @@
 package provider
 
 import (
+    "context"
     "embed"
     "encoding/json"
+    "errors"
     "fmt"
+    "io/fs"
     "net/mail"
+    "os"
+    "path/filepath"
+    "sort"
     "strings"
+
+    awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+    awsconfig "github.com/aws/aws-sdk-go-v2/config"
+    vpapi "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
+    vpapiTypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
 
     aws "github.com/pulumi/pulumi-aws/sdk/v6/go/aws"
     awscognito "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/cognito"
@@ -19,6 +30,8 @@ import (
     "github.com/pulumi/pulumi-go-provider/infer"
     "github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+    ds "github.com/bmatcuk/doublestar/v4"
+    "gopkg.in/yaml.v3"
 )
 
 //go:embed assets/index.mjs
@@ -49,6 +62,15 @@ type AuthorizerArgs struct {
     // Optional Cognito configuration. When provided, a Cognito User Pool will be provisioned
     // and configured as the Verified Permissions Identity Source for the created policy store.
     Cognito *CognitoConfig `pulumi:"cognito,optional"`
+    // Optional: AVP schema & policy asset ingestion and validation settings.
+    // When provided, the provider will:
+    //  - Load a Cedar JSON Schema from assets (YAML or JSON file)
+    //  - Validate single-namespace and required entity presence
+    //  - Enforce action-group naming/mapping conventions in warn/error/off mode
+    //  - Apply the schema to the created Policy Store (skip when unchanged)
+    //  - Ingest static Cedar policies from assets/policies (required guardrails enforced)
+    //  - Optionally run post-deploy canary authorization checks
+    AvpAssets *AvpAssetsConfig `pulumi:"avpAssets,optional"`
 }
 
 // LambdaConfig exposes a narrow set of tuning knobs for the Lambda authorizer.
@@ -146,6 +168,13 @@ func NewAuthorizerWithPolicyStore(
     store, err := awsvp.NewPolicyStore(ctx, fmt.Sprintf("%s-store", name), storeArgs, retOpts...)
     if err != nil {
         return nil, err
+    }
+
+    // 1a) Optional: Apply schema and ingest policies from assets
+    if args.AvpAssets != nil {
+        if err := applySchemaAndPolicies(ctx, name, store, *args.AvpAssets); err != nil {
+            return nil, err
+        }
     }
 
     // 1b) DynamoDB single-table for auth/identity/roles data
@@ -633,4 +662,507 @@ func provisionCognito(
 // Note: Identity Pools, lifecycle triggers, templates, and other advanced Cognito
 // options were intentionally removed from the public configuration surface. The
 // provider creates a minimal User Pool + client and binds it as the VP identity source.
+
+// ------------- AVP schema/policy ingestion & validation -------------
+
+// AvpAssetsConfig configures where the provider should find the AVP schema (YAML or JSON)
+// and Cedar policy files, and how strictly to validate them.
+type AvpAssetsConfig struct {
+    // Directory containing a schema file and a policies/ subfolder.
+    // Relative paths resolve from the Pulumi project root (working directory where `pulumi up` is run).
+    Dir string `pulumi:"dir"`
+    // Optional schema file name relative to Dir. When omitted, the provider searches for
+    // schema.yaml, schema.yml, or schema.json within Dir.
+    SchemaFile *string `pulumi:"schemaFile,optional"`
+    // Glob (recursive) for policy files relative to Dir. Defaults to "policies/**/*.cedar".
+    PoliciesGlob *string `pulumi:"policiesGlob,optional"`
+    // Enforce action-group mapping convention in policies and schema actions: "off" | "warn" | "error" (default: warn).
+    ActionGroupEnforcement *string `pulumi:"actionGroupEnforcement,optional"`
+    // Require baseline guardrail deny policies to be present (default: true).
+    RequireGuardrails *bool `pulumi:"requireGuardrails,optional"`
+    // If true, run canary authorization checks after policy deployment using cases defined in canaryFile (default: false).
+    PostDeployCanary *bool `pulumi:"postDeployCanary,optional"`
+    // Optional canary tests file (YAML) relative to Dir. When present and postDeployCanary is true,
+    // the provider runs IsAuthorized for each case and fails on mismatch.
+    CanaryFile *string `pulumi:"canaryFile,optional"`
+}
+
+// canonical action group identifiers
+var canonicalActionGroups = []string{
+    "batchCreate", "create", "batchDelete", "delete", "find", "get", "batchUpdate", "update",
+}
+
+// applySchemaAndPolicies loads schema/policies from disk, performs validations, applies schema if changed,
+// and creates static policies as Pulumi resources bound to the created policy store.
+func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.PolicyStore, cfg AvpAssetsConfig) error {
+    // Resolve base directory
+    dir := strings.TrimSpace(cfg.Dir)
+    if dir == "" {
+        return fmt.Errorf("avpAssets.dir is required when avpAssets is provided")
+    }
+    if !filepath.IsAbs(dir) {
+        cwd, _ := os.Getwd()
+        dir = filepath.Join(cwd, dir)
+    }
+    if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+        return fmt.Errorf("avpAssets.dir %q not found or not a directory", cfg.Dir)
+    }
+
+    // Determine schema file path
+    schemaPath := ""
+    if cfg.SchemaFile != nil && strings.TrimSpace(*cfg.SchemaFile) != "" {
+        schemaPath = *cfg.SchemaFile
+        if !filepath.IsAbs(schemaPath) {
+            schemaPath = filepath.Join(dir, schemaPath)
+        }
+    } else {
+        // search for default names
+        for _, f := range []string{"schema.yaml", "schema.yml", "schema.json"} {
+            p := filepath.Join(dir, f)
+            if _, err := os.Stat(p); err == nil {
+                schemaPath = p
+                break
+            }
+        }
+    }
+    if schemaPath == "" {
+        return fmt.Errorf("no schema file found in %s (looked for schema.yaml|schema.yml|schema.json); set avpAssets.schemaFile to override", dir)
+    }
+
+    // Read and parse schema (YAML or JSON → JSON string)
+    cedarJSON, ns, actions, err := loadAndValidateSchema(ctx, schemaPath)
+    if err != nil {
+        return err
+    }
+
+    // Action-group enforcement (schema-level, based on action names)
+    agMode := strings.ToLower(valueOrDefault(cfg.ActionGroupEnforcement, "warn"))
+    if violations, err := enforceActionGroups(actions, agMode); err != nil {
+        return err
+    } else if len(violations) > 0 && agMode == "warn" {
+        ctx.Log.Warn(fmt.Sprintf("AVP: actions not aligned to canonical action groups %v: %s", canonicalActionGroups, strings.Join(violations, ", ")), &pulumi.LogArgs{})
+    }
+
+    // Apply schema if changed
+    // Apply schema if changed, sequenced after the PolicyStore is created
+    // Derive Region from Policy Store ARN to ensure we call the same Region even when a custom provider is used
+    schemaApplied := pulumi.All(store.ID(), store.Arn).ApplyT(func(args []interface{}) (string, error) {
+        id := args[0].(string)
+        arn := args[1].(string)
+        parts := strings.Split(arn, ":")
+        if len(parts) < 4 {
+            return "", fmt.Errorf("unexpected policy store ARN: %s", arn)
+        }
+        regionName := parts[3]
+        if err := putSchemaIfChanged(ctx, id, cedarJSON, regionName); err != nil {
+            return "", err
+        }
+        ctx.Log.Info(fmt.Sprintf("AVP: schema applied for namespace %q (no-op when unchanged)", ns), &pulumi.LogArgs{})
+        return "ok", nil
+    }).(pulumi.StringOutput)
+
+    // Collect policy files
+    policiesGlob := valueOrDefault(cfg.PoliciesGlob, "policies/**/*.cedar")
+    files, err := globRecursive(dir, policiesGlob)
+    if err != nil {
+        return fmt.Errorf("failed to enumerate policies with glob %q: %w", policiesGlob, err)
+    }
+    if len(files) == 0 {
+        ctx.Log.Warn(fmt.Sprintf("AVP: no policy files matched %q under %s", policiesGlob, dir), &pulumi.LogArgs{})
+    }
+
+    // Guardrails presence check
+    reqGuardrails := true
+    if cfg.RequireGuardrails != nil {
+        reqGuardrails = *cfg.RequireGuardrails
+    }
+    if reqGuardrails {
+        missing := missingGuardrailFiles(files)
+        if len(missing) > 0 {
+            return fmt.Errorf("required guardrail policy files missing: %s", strings.Join(missing, ", "))
+        }
+    }
+
+    // Create static policies as child resources
+    // Deterministic order for stable diffs
+    sort.Strings(files)
+    policyIDs := []pulumi.StringOutput{}
+    for i, f := range files {
+        b, err := os.ReadFile(f)
+        if err != nil {
+            return fmt.Errorf("failed to read policy %s: %w", f, err)
+        }
+        polName := fmt.Sprintf("%s-pol-%03d", name, i+1)
+        // Gate the statement on schema application so policy creation occurs after PutSchema completes.
+        stmt := pulumi.All(schemaApplied).ApplyT(func(_ []interface{}) string {
+            return string(b)
+        }).(pulumi.StringOutput)
+        // AWS VP policy requires either static or template-linked definition; we use static.
+        // The "statement" field is Cedar policy text.
+        pol, err := awsvp.NewPolicy(ctx, polName, &awsvp.PolicyArgs{
+            PolicyStoreId: store.ID(),
+            Definition: &awsvp.PolicyDefinitionArgs{
+                Static: &awsvp.PolicyDefinitionStaticArgs{
+                    Statement: stmt,
+                },
+            },
+        }, pulumi.Parent(store))
+        if err != nil {
+            return fmt.Errorf("failed to create policy for %s: %w", f, err)
+        }
+        // Capture policy IDs to sequence canary checks after all policies are created.
+        policyIDs = append(policyIDs, pol.ID().ToStringOutput())
+    }
+
+    // Optional: post-deploy canary checks
+    if cfg.PostDeployCanary != nil && *cfg.PostDeployCanary {
+        // Chain canaries to run after policies (gated by schemaApplied and policy IDs) and export status so failures surface.
+        canaryDeps := append([]pulumi.Output{schemaApplied}, toOutputs(policyIDs)...)
+        canaryStatus := pulumi.All(canaryDeps...).ApplyT(func(_ []interface{}) (string, error) {
+            if err := runCanaries(ctx, store, dir, cfg.CanaryFile); err != nil {
+                return "", err
+            }
+            return "ok", nil
+        }).(pulumi.StringOutput)
+        ctx.Export(fmt.Sprintf("%s-avpCanary", name), canaryStatus)
+    }
+
+    return nil
+}
+
+// loadAndValidateSchema parses YAML/JSON schema, enforces single namespace and required entities.
+// Returns cedar JSON string, namespace name, and the set of action names.
+func loadAndValidateSchema(ctx *pulumi.Context, schemaPath string) (string, string, []string, error) {
+    raw, err := os.ReadFile(schemaPath)
+    if err != nil {
+        return "", "", nil, fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
+    }
+    var doc any
+    switch strings.ToLower(filepath.Ext(schemaPath)) {
+    case ".yaml", ".yml":
+        if err := yaml.Unmarshal(raw, &doc); err != nil {
+            return "", "", nil, fmt.Errorf("invalid YAML in %s: %w", schemaPath, err)
+        }
+    case ".json":
+        if err := json.Unmarshal(raw, &doc); err != nil {
+            return "", "", nil, fmt.Errorf("invalid JSON in %s: %w", schemaPath, err)
+        }
+    default:
+        return "", "", nil, fmt.Errorf("unsupported schema extension %q; expected .yaml, .yml, or .json", filepath.Ext(schemaPath))
+    }
+    // Expect top-level object: { "<namespace>": { entityTypes: {...}, actions: {...} } }
+    top, ok := doc.(map[string]any)
+    if !ok {
+        return "", "", nil, fmt.Errorf("schema must be a mapping of namespace → {entityTypes, actions}")
+    }
+    if len(top) != 1 {
+        return "", "", nil, fmt.Errorf("AVP supports a single namespace per schema; found %d namespaces", len(top))
+    }
+    var ns string
+    var body any
+    for k, v := range top {
+        ns = k
+        body = v
+        break
+    }
+    // Required entity presence checks
+    bmap, ok := body.(map[string]any)
+    if !ok {
+        return "", "", nil, fmt.Errorf("schema namespace %q must map to an object", ns)
+    }
+    etRaw, ok := bmap["entityTypes"]
+    if !ok {
+        return "", "", nil, fmt.Errorf("schema namespace %q must define entityTypes", ns)
+    }
+    et, ok := etRaw.(map[string]any)
+    if !ok {
+        return "", "", nil, fmt.Errorf("entityTypes must be an object of entity type definitions")
+    }
+    requiredPrincipals := []string{"Tenant", "User", "Group", "Role", "GlobalRole", "TenantGrant"}
+    requiredResources := []string{"Event", "Files", "Grant", "GlobalGrant", "Ticket"}
+    missing := []string{}
+    for _, r := range append(append([]string{}, requiredPrincipals...), requiredResources...) {
+        if _, ok := et[r]; !ok {
+            missing = append(missing, r)
+        }
+    }
+    if len(missing) > 0 {
+        return "", "", nil, fmt.Errorf("schema namespace %q missing required entity types: %s", ns, strings.Join(missing, ", "))
+    }
+    // Hierarchy expectations: Tenant & Group support trees → memberOfTypes includes self
+    for _, hierarchical := range []string{"Tenant", "Group"} {
+        if def, ok := et[hierarchical].(map[string]any); ok {
+            if mot, ok := def["memberOfTypes"].([]any); ok {
+                found := false
+                for _, v := range mot {
+                    if s, ok := v.(string); ok && s == hierarchical {
+                        found = true
+                        break
+                    }
+                }
+                if !found {
+                    ctx.Log.Warn(fmt.Sprintf("entity %s should include itself in memberOfTypes to enable hierarchical nesting", hierarchical), &pulumi.LogArgs{})
+                }
+            } else {
+                ctx.Log.Warn(fmt.Sprintf("entity %s should define memberOfTypes including itself to enable hierarchical nesting", hierarchical), &pulumi.LogArgs{})
+            }
+        }
+    }
+    // Collect action names for action-group enforcement
+    acts := []string{}
+    if aRaw, ok := bmap["actions"]; ok {
+        if amap, ok := aRaw.(map[string]any); ok {
+            for name := range amap {
+                acts = append(acts, name)
+            }
+        }
+    }
+    // Re-encode to canonical JSON (minified) for PutSchema
+    b, err := json.Marshal(top)
+    if err != nil {
+        return "", "", nil, fmt.Errorf("failed to encode schema as JSON: %w", err)
+    }
+    return string(b), ns, acts, nil
+}
+
+// enforceActionGroups checks that action names map cleanly to canonical groups per naming convention.
+// Convention: action names start with one of: batchCreate|create|batchDelete|delete|find|get|batchUpdate|update
+func enforceActionGroups(actions []string, mode string) ([]string, error) {
+    if strings.EqualFold(mode, "off") {
+        return nil, nil
+    }
+    groups := map[string]struct{}{}
+    for _, g := range canonicalActionGroups {
+        groups[g] = struct{}{}
+    }
+    bad := []string{}
+    for _, a := range actions {
+        g := leadingCamelSegment(a)
+        if _, ok := groups[g]; !ok {
+            bad = append(bad, a)
+        }
+    }
+    if len(bad) == 0 {
+        return nil, nil
+    }
+    if mode == "error" {
+        return bad, fmt.Errorf("actions not aligned to canonical action groups %v: %s", canonicalActionGroups, strings.Join(bad, ", "))
+    }
+    // warn
+    return bad, nil
+}
+
+// leadingCamelSegment returns the leading lowerCamelCase verb segment from an action name.
+// Examples: createTicket -> create; batchDeleteFiles -> batchDelete; GetTicket -> get
+func leadingCamelSegment(s string) string {
+    if s == "" {
+        return s
+    }
+    // Normalize to lower camel: ensure first rune is lowercased for comparison
+    rs := []rune(s)
+    rs[0] = []rune(strings.ToLower(string(rs[0])))[0]
+    s = string(rs)
+    // Identify transition from lower→upper (verb boundary to resource)
+    for i := 1; i < len(s); i++ {
+        if s[i] >= 'A' && s[i] <= 'Z' {
+            return s[:i]
+        }
+    }
+    return s
+}
+
+// putSchemaIfChanged retrieves existing schema and applies only when content differs.
+func putSchemaIfChanged(ctx *pulumi.Context, policyStoreId string, cedarJSON string, region string) error {
+    cfg, err := loadAwsConfig(ctx.Context(), region)
+    if err != nil {
+        return err
+    }
+    client := vpapi.NewFromConfig(cfg)
+
+    // Fetch current schema; treat NotFound as empty
+    var current string
+    pulumiCtx := ctx.Context()
+    getOut, err := client.GetSchema(pulumiCtx, &vpapi.GetSchemaInput{PolicyStoreId: &policyStoreId})
+    if err != nil {
+        var notFound *vpapiTypes.ResourceNotFoundException
+        if !errors.As(err, &notFound) {
+            // Other errors: continue to attempt PutSchema but report context
+            ctx.Log.Warn(fmt.Sprintf("AVP GetSchema warning: %v", err), &pulumi.LogArgs{})
+        }
+    } else if getOut.Definition != nil && getOut.Definition.CedarJson != nil {
+        current = *getOut.Definition.CedarJson
+    }
+    if normalizeJSON(current) == normalizeJSON(cedarJSON) {
+        ctx.Log.Info("AVP: schema unchanged; skipping PutSchema", &pulumi.LogArgs{})
+        return nil
+    }
+    // Apply
+    _, err = client.PutSchema(pulumiCtx, &vpapi.PutSchemaInput{
+        PolicyStoreId: &policyStoreId,
+        Definition:    &vpapiTypes.SchemaDefinition{CedarJson: &cedarJSON},
+    })
+    if err != nil {
+        return fmt.Errorf("failed to put schema: %w", err)
+    }
+    return nil
+}
+
+// runCanaries executes authorization checks defined in a YAML file under dir (defaults to canaries.yaml).
+// File shape:
+// cases:
+//   - principal: { entityType: "User", entityId: "user-1" }
+//     action: "getTicket"
+//     resource: { entityType: "Ticket", entityId: "t-1" }
+//     expect: "ALLOW" | "DENY"
+func runCanaries(ctx *pulumi.Context, store *awsvp.PolicyStore, dir string, canaryFile *string) error {
+    if ctx.DryRun() {
+        ctx.Log.Info("AVP canary: preview mode; skipping canary execution", &pulumi.LogArgs{})
+        return nil
+    }
+    path := filepath.Join(dir, "canaries.yaml")
+    if canaryFile != nil && *canaryFile != "" {
+        p := *canaryFile
+        if !filepath.IsAbs(p) {
+            p = filepath.Join(dir, p)
+        }
+        path = p
+    }
+    b, err := os.ReadFile(path)
+    if err != nil {
+        return fmt.Errorf("failed to read canary file %s: %w", path, err)
+    }
+    var doc struct{
+        Cases []struct{
+            Principal map[string]string `yaml:"principal"`
+            Action    string            `yaml:"action"`
+            Resource  map[string]string `yaml:"resource"`
+            Expect    string            `yaml:"expect"`
+        } `yaml:"cases"`
+    }
+    if err := yaml.Unmarshal(b, &doc); err != nil {
+        return fmt.Errorf("invalid canary YAML %s: %w", path, err)
+    }
+    if len(doc.Cases) == 0 {
+        ctx.Log.Warn("AVP canary: no cases defined; skipping", &pulumi.LogArgs{})
+        return nil
+    }
+    // Execute inside an ApplyT so the store ID is resolved and failures are surfaced
+    _ = store.ID().ToStringOutput().ApplyT(func(id string) (string, error) {
+        region, err := aws.GetRegion(ctx, nil)
+        if err != nil {
+            return "", fmt.Errorf("failed to get AWS region: %w", err)
+        }
+        cfg, err := loadAwsConfig(ctx.Context(), region.Name)
+        if err != nil {
+            return "", err
+        }
+        client := vpapi.NewFromConfig(cfg)
+        for i, c := range doc.Cases {
+            ptype := c.Principal["entityType"]
+            pid := c.Principal["entityId"]
+            rtype := c.Resource["entityType"]
+            rid := c.Resource["entityId"]
+            act := c.Action
+            p := vpapiTypes.EntityIdentifier{EntityType: &ptype, EntityId: &pid}
+            r := vpapiTypes.EntityIdentifier{EntityType: &rtype, EntityId: &rid}
+            out, err := client.IsAuthorized(ctx.Context(), &vpapi.IsAuthorizedInput{
+                PolicyStoreId: &id,
+                Principal:     &p,
+                Resource:      &r,
+                Action:        &vpapiTypes.ActionIdentifier{ActionType: vpapiTypes.ActionTypeAction, ActionId: &act},
+            })
+            if err != nil {
+                return "", fmt.Errorf("canary #%d failed to execute: %v", i+1, err)
+            }
+            got := string(out.Decision)
+            if !strings.EqualFold(got, c.Expect) {
+                return "", fmt.Errorf("canary #%d unexpected decision: got %s, want %s (principal=%v, action=%s, resource=%v)", i+1, got, c.Expect, c.Principal, c.Action, c.Resource)
+            }
+        }
+        ctx.Log.Info(fmt.Sprintf("AVP canary: %d checks passed", len(doc.Cases)), &pulumi.LogArgs{})
+        return id, nil
+    })
+    return nil
+}
+
+// missingGuardrailFiles returns a list of required guardrail policy basenames that are not present.
+func missingGuardrailFiles(paths []string) []string {
+    required := []string{
+        "01-deny-tenant-mismatch.cedar",
+        "02-deny-tenant-role-global-admin.cedar",
+    }
+    present := map[string]struct{}{}
+    for _, p := range paths {
+        present[filepath.Base(p)] = struct{}{}
+    }
+    missing := []string{}
+    for _, r := range required {
+        if _, ok := present[r]; !ok {
+            missing = append(missing, r)
+        }
+    }
+    return missing
+}
+
+// globRecursive implements a simple recursive glob: base + pattern (supports **).
+func globRecursive(base, pattern string) ([]string, error) {
+    // Translate a subset of ** glob to filepath.WalkDir
+    matches := []string{}
+    err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
+        if err != nil {
+            return err
+        }
+        if d.IsDir() {
+            return nil
+        }
+        rel, _ := filepath.Rel(base, path)
+        ok, err := ds.PathMatch(pattern, rel)
+        if err != nil {
+            return err
+        }
+        if ok {
+            matches = append(matches, path)
+        }
+        return nil
+    })
+    return matches, err
+}
+
+// loadAwsConfig loads the default AWS configuration for the given region using the standard
+// environment/credentials chain used by the Pulumi AWS provider.
+func loadAwsConfig(ctx context.Context, region string) (awsv2.Config, error) {
+    return awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
+}
+
+// normalizeJSON minifies JSON text for stable equality comparison; when input is empty returns empty string.
+func normalizeJSON(s string) string {
+    if strings.TrimSpace(s) == "" {
+        return ""
+    }
+    var v any
+    if err := json.Unmarshal([]byte(s), &v); err != nil {
+        // Not JSON? return original
+        return s
+    }
+    b, err := json.Marshal(v)
+    if err != nil {
+        return s
+    }
+    return string(b)
+}
+
+func valueOrDefault[T ~string](ptr *T, def T) string { // generic-ish helper for *string
+    if ptr == nil {
+        return string(def)
+    }
+    return string(*ptr)
+}
+
+func toOutputs(ins []pulumi.StringOutput) []pulumi.Output {
+    outs := make([]pulumi.Output, 0, len(ins))
+    for _, in := range ins {
+        outs = append(outs, in)
+    }
+    return outs
+}
 

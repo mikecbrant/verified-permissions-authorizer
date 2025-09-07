@@ -1,0 +1,9 @@
+cases:
+  - principal: { entityType: User, entityId: user-1 }
+    action: getTicket
+    resource: { entityType: Ticket, entityId: t-1 }
+    expect: ALLOW
+  - principal: { entityType: User, entityId: user-1 }
+    action: getFile
+    resource: { entityType: Files, entityId: f-1 }
+    expect: DENY

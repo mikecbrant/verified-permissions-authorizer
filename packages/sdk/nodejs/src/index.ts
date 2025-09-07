@@ -26,12 +26,23 @@ type DynamoConfig = {
   enableDynamoDbStream?: pulumi.Input<boolean>;
 };
 
+type AvpAssetsConfig = {
+  dir: pulumi.Input<string>;
+  schemaFile?: pulumi.Input<string>;
+  policiesGlob?: pulumi.Input<string>;
+  actionGroupEnforcement?: pulumi.Input<"off" | "warn" | "error">;
+  requireGuardrails?: pulumi.Input<boolean>;
+  postDeployCanary?: pulumi.Input<boolean>;
+  canaryFile?: pulumi.Input<string>;
+};
+
 type AuthorizerWithPolicyStoreArgs = {
   description?: pulumi.Input<string>;
   retainOnDelete?: pulumi.Input<boolean>;
   lambda?: pulumi.Input<LambdaConfig>;
   dynamo?: pulumi.Input<DynamoConfig>;
   cognito?: pulumi.Input<CognitoConfig>;
+  avpAssets?: pulumi.Input<AvpAssetsConfig>;
 };
 
 // Output group shapes
@@ -135,6 +146,7 @@ export {
   type AuthorizerLambdaOutputs,
   AuthorizerWithPolicyStore,
   type AuthorizerWithPolicyStoreArgs,
+  type AvpAssetsConfig,
   type CognitoConfig,
   type CognitoSignInAlias,
   type DynamoConfig,

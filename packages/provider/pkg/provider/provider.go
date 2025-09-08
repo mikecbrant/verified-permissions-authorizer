@@ -645,5 +645,5 @@ func provisionCognito(
 // provider creates a minimal User Pool + client and binds it as the VP identity source.
 
 unless {
-// (AVP ingestion, guardrails, and canaries moved to schema.go, policies.go, and canaries.go)
+
 

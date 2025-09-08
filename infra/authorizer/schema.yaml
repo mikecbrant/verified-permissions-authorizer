@@ -117,7 +117,7 @@ vpauthorizer.ticketing.demo
         principalTypes: [User, GlobalRole]
         resourceTypes: [Ticket, File, Event]
 
-    # Granular entity actions map to action groups via memberOf (PascalCase); principals implied by groups
+    # Granular entity actions map to action groups via memberOf
     # Ticket actions (alphabetized)
     BatchUpdateTickets:
       memberOf: [BatchUpdate]

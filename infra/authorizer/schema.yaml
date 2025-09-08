@@ -138,7 +138,7 @@ vpauthorizer.ticketing.demo
       memberOf: [Update]
       appliesTo: { resourceTypes: [Ticket] }
 
-    # File actions (alphabetized)
+    # File actions
     DeleteFile:
       memberOf: [Delete]
       appliesTo: { resourceTypes: [File] }

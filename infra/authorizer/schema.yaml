@@ -149,7 +149,7 @@ vpauthorizer.ticketing.demo
       memberOf: [Update]
       appliesTo: { resourceTypes: [File] }
 
-    # Event actions (alphabetized)
+    # Event actions
     FindEvents:
       memberOf: [Find]
       appliesTo: { resourceTypes: [Event] }

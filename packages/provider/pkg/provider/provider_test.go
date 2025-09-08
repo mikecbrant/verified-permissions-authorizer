@@ -261,8 +261,11 @@ func TestSchema_GroupedOutputs(t *testing.T) {
     }
     ddb := props["dynamo"].(map[string]any)
     ddbProps, _ := ddb["properties"].(map[string]any)
-    if _, ok := ddbProps["AuthTableArn"]; !ok {
-        t.Fatalf("expected dynamo.AuthTableArn in schema")
+    if _, ok := ddbProps["authTableArn"]; !ok {
+        t.Fatalf("expected dynamo.authTableArn in schema")
+    }
+    if _, ok := ddbProps["authTableStreamArn"]; !ok {
+        t.Fatalf("expected dynamo.authTableStreamArn in schema")
     }
     // Legacy flat keys should be absent at top-level
     for _, k := range []string{

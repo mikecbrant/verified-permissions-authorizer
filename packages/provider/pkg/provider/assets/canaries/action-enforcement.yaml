@@ -1,0 +1,6 @@
+cases:
+  # Non-group action should be denied by action-enforcement guardrail
+  - principal: { entityType: User, entityId: user-1 }
+    action: getTicket
+    resource: { entityType: Ticket, entityId: t-1 }
+    expect: DENY

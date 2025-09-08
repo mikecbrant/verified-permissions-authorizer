@@ -9,10 +9,10 @@ import { AuthorizerWithPolicyStore } from "pulumi-verified-permissions-authorize
 const authz = new AuthorizerWithPolicyStore("authz", {
   description: "Example AVP stack",
   verifiedPermissions: {
-    schemaFile: "../packages/provider/examples/avp/schema.yaml",
-    policyDir: "../packages/provider/examples/avp/policies",
-    actionGroupEnforcement: "error",
-    // canaryFile: "../packages/provider/examples/avp/canaries.yaml",
+    // Using provider defaults: ./authorizer/schema.yaml and ./authorizer/policies
+    // actionGroupEnforcement defaults to 'error'
+    // Uncomment to run canaries as part of deploy (defaults to ./authorize/canaries.yaml when present)
+    // canaryFile: "./authorizer/canaries.yaml",
   },
 });
 

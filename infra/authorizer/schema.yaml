@@ -68,7 +68,6 @@ ticketing-${project}-${stack}:
           path: { type: String }
           tenantId: { type: String }
 
-  # Actions follow the action-group convention via naming prefix
   actions:
     # Tenant-scoped action groups (apply to all principal types)
     Create:
@@ -118,37 +117,42 @@ ticketing-${project}-${stack}:
         principalTypes: [User, GlobalRole]
         resourceTypes: [Ticket, File, Event]
 
-    # Granular entity actions map to action groups via memberOf
-    createTicket:
-      memberOf: [Create]
-      appliesTo:
-        resourceTypes: [Ticket]
-    deleteTicket:
-      memberOf: [Delete]
-      appliesTo:
-        resourceTypes: [Ticket]
-    getTicket:
-      memberOf: [Get]
-      appliesTo:
-        resourceTypes: [Ticket]
-    findTickets:
-      memberOf: [Find]
-      appliesTo:
-        resourceTypes: [Ticket]
-    updateTicket:
-      memberOf: [Update]
-      appliesTo:
-        resourceTypes: [Ticket]
-    batchUpdateTickets:
+    # Granular entity actions map to action groups via memberOf (PascalCase); principals implied by groups
+    # Ticket actions (alphabetized)
+    BatchUpdateTickets:
       memberOf: [BatchUpdate]
-      appliesTo:
-        resourceTypes: [Ticket]
-
-    getFile:
-      memberOf: [Get]
-      appliesTo:
-        resourceTypes: [File]
-    deleteFile:
+      appliesTo: { resourceTypes: [Ticket] }
+    CreateTicket:
+      memberOf: [Create]
+      appliesTo: { resourceTypes: [Ticket] }
+    DeleteTicket:
       memberOf: [Delete]
-      appliesTo:
-        resourceTypes: [File]
+      appliesTo: { resourceTypes: [Ticket] }
+    FindTickets:
+      memberOf: [Find]
+      appliesTo: { resourceTypes: [Ticket] }
+    GetTicket:
+      memberOf: [Get]
+      appliesTo: { resourceTypes: [Ticket] }
+    UpdateTicket:
+      memberOf: [Update]
+      appliesTo: { resourceTypes: [Ticket] }
+
+    # File actions (alphabetized)
+    DeleteFile:
+      memberOf: [Delete]
+      appliesTo: { resourceTypes: [File] }
+    GetFile:
+      memberOf: [Get]
+      appliesTo: { resourceTypes: [File] }
+    UpdateFile:
+      memberOf: [Update]
+      appliesTo: { resourceTypes: [File] }
+
+    # Event actions (alphabetized)
+    FindEvents:
+      memberOf: [Find]
+      appliesTo: { resourceTypes: [Event] }
+    GetEvent:
+      memberOf: [Get]
+      appliesTo: { resourceTypes: [Event] }

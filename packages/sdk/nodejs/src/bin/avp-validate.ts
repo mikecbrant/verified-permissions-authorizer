@@ -134,10 +134,9 @@ const enforceActionGroups = (actions: string[], mode: Mode): string[] => {
   if (mode === "off") return [];
   const bad: string[] = [];
   for (const a of actions) {
-    const lower = a.toLowerCase();
     let ok = false;
     for (const g of CANONICAL) {
-      if (lower.startsWith(g.toLowerCase())) {
+      if (a.startsWith(g)) {
         ok = true;
         break;
       }
@@ -146,11 +145,12 @@ const enforceActionGroups = (actions: string[], mode: Mode): string[] => {
   }
   if (bad.length && mode === "error")
     fail(
-      `Actions not aligned to canonical action groups ${Array.from(CANONICAL).join(
-        ", ",
-      )}: ${bad.join(", ")}`,
+      `Actions not aligned to canonical action groups (case-sensitive) ${Array.from(
+        CANONICAL,
+      ).join(", ")}: ${bad.join(", ")}`,
     );
-  if (bad.length) warn(`Actions not aligned to canonical groups: ${bad.join(", ")}`);
+  if (bad.length)
+    warn(`Actions not aligned to canonical groups (case-sensitive): ${bad.join(", ")}`);
   return bad;
 };
 

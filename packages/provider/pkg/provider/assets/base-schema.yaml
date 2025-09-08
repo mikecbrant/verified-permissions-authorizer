@@ -1,0 +1,87 @@
+base-namespace-example:
+  entityTypes:
+    Tenant:
+      # Homogeneous tree (self-only memberOfTypes)
+      memberOfTypes: [Tenant]
+      shape:
+        type: Record
+        attributes:
+          name: { type: String }
+
+    User:
+      # Global entity; tenant-scoped permissions are granted via TenantGrant
+      memberOfTypes: [GlobalRole]
+      shape:
+        type: Record
+        attributes:
+          userId: { type: String }
+
+    Role:
+      # No hierarchy for roles
+      shape:
+        type: Record
+        attributes:
+          name: { type: String }
+          scope: { type: String } # "tenant"
+
+    GlobalRole:
+      shape:
+        type: Record
+        attributes:
+          name: { type: String }
+          scope: { type: String } # "global"
+
+    TenantGrant:
+      # Used as principal for tenant-scoped permissions
+      memberOfTypes: [Role, Tenant, User]
+      shape:
+        type: Record
+        attributes:
+          tenantId: { type: String }
+          userId: { type: String }
+
+    # Optional tracking entity for installed policies (for external persistence)
+    Policy:
+      shape:
+        type: Record
+        attributes:
+          name: { type: String }
+          hash: { type: String }
+
+  actions:
+    # Tenant-scoped action groups
+    Create:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+    Delete:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+    Find:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+    Get:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+    Update:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+    BatchUpdate:
+      appliesTo:
+        principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant]
+
+    # Global action groups
+    GlobalCreate:
+      appliesTo:
+        principalTypes: [User, GlobalRole]
+    GlobalDelete:
+      appliesTo:
+        principalTypes: [User, GlobalRole]
+    GlobalFind:
+      appliesTo:
+        principalTypes: [User, GlobalRole]
+    GlobalGet:
+      appliesTo:
+        principalTypes: [User, GlobalRole]
+    GlobalUpdate:
+      appliesTo:
+        principalTypes: [User, GlobalRole]

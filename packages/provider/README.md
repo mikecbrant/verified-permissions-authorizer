@@ -25,11 +25,11 @@ Interface (stable)
       - `replyToEmail` (string, optional)
       - `configurationSet` (string, optional)
   - `verifiedPermissions?` — ingest AVP schema and Cedar policies and validate them
-    - `schemaFile` (string, required) — path to schema file (`.yaml`/`.yml` or `.json`). YAML is always converted to canonical JSON before validation and upload.
-    - `policyDir` (string, required) — directory containing `.cedar` policy files (recursively discovered).
-    - `actionGroupEnforcement?` ("off" | "warn" | "error"; default `"error"`) — enforces canonical PascalCase action groups (Create/Delete/Find/Get/Update and Batch* variants) and their Global* equivalents.
+    - `schemaFile?` (string; default `./authorizer/schema.yaml`) — path to schema file (`.yaml`/`.yml` or `.json`). YAML is always converted to canonical JSON before validation and upload.
+    - `policyDir?` (string; default `./authorizer/policies`) — directory containing `.cedar` policy files (recursively discovered).
+    - `actionGroupEnforcement?` ("off" | "warn" | "error"; default `"error"`) — enforce canonical action groups (Create/Delete/Find/Get/Update plus Batch* variants) and their Global* equivalents.
     - `disableGuardrails?` (boolean; default `false`) — when `true`, the provider will not install deny guardrail policies. A warning is emitted as this posture is not recommended.
-    - `canaryFile?` (string) — optional YAML file with canary authorization cases to execute post-deploy.
+    - `canaryFile?` (string; default `./authorize/canaries.yaml` when present) — optional YAML file with canary authorization cases to execute post-deploy.
 - Outputs:
   - Top-level:
     - `policyStoreId`, `policyStoreArn`, `parameters?`
@@ -52,6 +52,7 @@ Tight coupling to the Lambda package
 
 Schema
 - The provider schema is `packages/provider/schema.json`.
+- A minimal `base-schema.yaml` (no resource entities) ships in the provider under `packages/provider/pkg/provider/assets/base-schema.yaml`. It encodes the principal entities and canonical action groups, plus an optional `Policy` entity you can use to track installed policies in your own persistence layer.
 
 Verified Permissions identity source
 - When `cognito` is supplied, an `aws.verifiedpermissions.IdentitySource` is created pointing at the provisioned User Pool and its client IDs.
@@ -87,10 +88,10 @@ See the root README for release automation details.
 - Hierarchy expectations:
   - `Tenant` must be a homogeneous tree (its `memberOfTypes` should include only `Tenant`).
   - `User` and `Role` have no hierarchy; a user can be in many roles.
-- Action-group convention:
-  - Define actions per-entity (for example, `createTicket`, `deleteTicket`, `getFile`). The leading verb maps to a canonical PascalCase action group: `Create`, `Delete`, `Find`, `Get`, `Update` and their `Batch*` variants.
-  - A globally-scoped set exists with the `Global*` prefix (for cross-tenant access): `GlobalCreate`, `GlobalDelete`, `GlobalFind`, `GlobalGet`, `GlobalUpdate` (plus `GlobalBatch*` variants).
-  - Enforcement occurs when `actionGroupEnforcement` is enabled (default is `error`).
+- Action groups and scope:
+  - Define granular actions per-entity (for example, `CreateTicket`, `DeleteTicket`, `GetFile`) and attach them to groups via `memberOf`. Do not redundantly declare principals on granular actions; principals come from the group.
+  - Canonical tenant-scoped groups: `Create`, `Delete`, `Find`, `Get`, `Update` and their `Batch*` variants. Global equivalents use the `Global*` prefix.
+  - Enforcement uses exact, case-sensitive matching to these group names; default is `error`.
 
 - Guardrails: When guardrails are enabled (default), the provider installs a consolidated deny policy that:
   - Denies `Global*` actions when the principal has a `tenantId`.
@@ -101,18 +102,18 @@ See the root README for release automation details.
 
 ### Examples
 
-An example set is included at `packages/provider/examples/avp`:
+An example set is included under `/infra` so it can be deployed alongside the infrastructure:
 
-- Schema: `packages/provider/examples/avp/schema.yaml` (namespace key shows a suggested pattern using `{project}-{stack}` for uniqueness)
-- Policies: `packages/provider/examples/avp/policies/*.cedar`
-- Canaries: `packages/provider/examples/avp/canaries.yaml`
+- Schema: `infra/authorizer/schema.yaml`
+- Policies: `infra/authorizer/policies/*.cedar`
+- Canaries: `infra/authorize/canaries.yaml`
 
 ### Local validation (no AWS)
 
-The SDK ships a CLI validator `avp-validate` that mirrors the provider’s validations (schema checks, action-group enforcement, policy syntax scan, and canary structure):
+The SDK ships a CLI validator `avp-validate` that mirrors the provider’s validations (schema checks, action-group enforcement, policy syntax scan, and canary structure). It runs under Node.js (no Bun required):
 
 ```
-npx avp-validate --schema ./packages/provider/examples/avp/schema.yaml --policyDir ./packages/provider/examples/avp/policies --mode error
+npx avp-validate --schema ./infra/authorizer/schema.yaml --policyDir ./infra/authorizer/policies --mode error
 ```
 
 ### CI validation
@@ -128,10 +129,8 @@ import { AuthorizerWithPolicyStore } from "pulumi-verified-permissions-authorize
 const authz = new AuthorizerWithPolicyStore("authz", {
   description: "Ticketing policy store",
   verifiedPermissions: {
-    schemaFile: "./packages/provider/examples/avp/schema.yaml",
-    policyDir: "./packages/provider/examples/avp/policies",
-    actionGroupEnforcement: "error",
-    // canaryFile: "./packages/provider/examples/avp/canaries.yaml",
+    // defaults to ./authorizer/schema.yaml and ./authorizer/policies
+    // canaryFile: "./authorize/canaries.yaml",
   },
 });
 

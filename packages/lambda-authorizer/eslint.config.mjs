@@ -4,8 +4,17 @@ import importPlugin from 'eslint-plugin-import';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import promisePlugin from 'eslint-plugin-promise';
 
+// Optionally include shared config when available. We spread `shared` first so local
+// rules/configs below take precedence when overlaps occur.
+let shared = []
+try {
+  const m = await import('@mikecbrant/ts-tooling/eslint/flat')
+  shared = Array.isArray(m.default) ? m.default : []
+} catch {}
+
 /** @type {import('eslint').Linter.FlatConfig[]} */
 const config = [
+  ...shared,
   {
     ignores: ['dist/**'],
   },

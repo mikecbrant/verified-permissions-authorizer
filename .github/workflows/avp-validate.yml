@@ -3,8 +3,8 @@ name: AVP assets validation
 on:
   pull_request:
     paths:
-      - 'packages/provider/examples/avp/**'
-      - 'packages/provider/tools/**'
+      - 'infra/authorizer/**'
+      - 'infra/authorize/**'
       - 'packages/provider/pkg/provider/**'
       - 'packages/provider/schema.json'
       - 'packages/sdk/nodejs/**'
@@ -15,14 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.2.x'
       - name: Install dependencies (workspace)
         run: pnpm -r install --frozen-lockfile=false
       - name: Lint and typecheck SDK
         run: |
           pnpm -r --filter "./packages/sdk/nodejs" lint
           pnpm -r --filter "./packages/sdk/nodejs" typecheck
-      - name: Validate example AVP assets
-        run: pnpm validate:avp --dir packages/provider/examples/avp
+      - name: Validate example AVP assets (SDK CLI)
+        run: npx -y avp-validate --schema infra/authorizer/schema.yaml --policyDir infra/authorizer/policies --mode error

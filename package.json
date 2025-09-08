@@ -13,7 +13,7 @@
     "changeset": "changeset",
     "release": "changeset version && pnpm -r build",
     "test": "pnpm -r test && pnpm go:test",
-    "validate:avp": "bash -lc \"if command -v bun >/dev/null 2>&1; then bun run packages/provider/tools/avp-validate.ts --dir packages/provider/examples/avp; else echo '[skip] bun not installed; skipping AVP validation locally'; fi\"",
+    "validate:avp": "npx -y avp-validate --schema infra/authorizer/schema.yaml --policyDir infra/authorizer/policies --mode error",
     "go:lint": "bash -lc 'cd packages/provider && go mod tidy && go vet ./...'",
     "go:test": "bash -lc \"if command -v go >/dev/null 2>&1; then cd packages/provider && go mod tidy && go test ./... -coverprofile=coverage.out -covermode=count; else echo '[skip] go not installed; skipping provider tests locally'; fi\"",
     "format:go": "bash -lc 'gofmt -s -w packages/provider'"

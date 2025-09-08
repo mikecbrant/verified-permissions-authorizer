@@ -118,7 +118,7 @@ vpauthorizer.ticketing.demo
         resourceTypes: [Ticket, File, Event]
 
     # Granular entity actions map to action groups via memberOf
-    # Ticket actions (alphabetized)
+    # Ticket actions
     BatchUpdateTickets:
       memberOf: [BatchUpdate]
       appliesTo: { resourceTypes: [Ticket] }

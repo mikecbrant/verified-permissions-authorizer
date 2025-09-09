@@ -75,14 +75,16 @@ func runCombinedCanaries(ctx *pulumi.Context, store *awsvp.PolicyStore, consumer
             p := vpapiTypes.EntityIdentifier{EntityType: &c.PrincipalType, EntityId: &c.PrincipalId}
             r := vpapiTypes.EntityIdentifier{EntityType: &c.ResourceType, EntityId: &c.ResourceId}
             act := c.Action
+            // AWS SDK v2: ActionIdentifier uses string fields; ActionType must be the literal "Action".
+            actionType := "Action"
             out, err := client.IsAuthorized(ctx.Context(), &vpapi.IsAuthorizedInput{
                 PolicyStoreId: &id,
                 Principal:     &p,
                 Resource:      &r,
-                Action:        &vpapiTypes.ActionIdentifier{ActionType: vpapiTypes.ActionTypeAction, ActionId: &act},
+                Action:        &vpapiTypes.ActionIdentifier{ActionType: &actionType, ActionId: &act},
             })
             if err != nil {
-                return "", fmt.Errorf("canary #%d failed to execute: %v", i+1, err)
+                return "", fmt.Errorf("canary #%d failed to execute: %w", i+1, err)
             }
             got := string(out.Decision)
             if !strings.EqualFold(got, c.Expect) {

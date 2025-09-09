@@ -143,7 +143,8 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
             cf = filepath.Join(cwd, cf)
         }
         canaryDeps := append([]pulumi.Output{schemaApplied}, toOutputs(policyIDs)...)
-        canaryStatus := pulumi.All(canaryDeps...).ApplyT(func(_ []interface{}) (string, error) {
+        depsAny := outputsToInterfaces(canaryDeps)
+        canaryStatus := pulumi.All(depsAny...).ApplyT(func(_ []interface{}) (string, error) {
             if err := runCombinedCanaries(ctx, store, cf, agMode); err != nil {
                 return "", err
             }
@@ -296,8 +297,8 @@ func putSchemaIfChanged(ctx *pulumi.Context, policyStoreId string, cedarJSON str
     var current string
     pulumiCtx := ctx.Context()
     getOut, err := client.GetSchema(pulumiCtx, &vpapi.GetSchemaInput{PolicyStoreId: &policyStoreId})
-    if err == nil && getOut.Definition != nil && getOut.Definition.CedarJson != nil {
-        current = *getOut.Definition.CedarJson
+    if err == nil && getOut.Schema != nil {
+        current = *getOut.Schema
     }
     if normalizeJson(current) == normalizeJson(cedarJSON) {
         ctx.Log.Info("AVP: schema unchanged; skipping PutSchema", &pulumi.LogArgs{})
@@ -306,7 +307,7 @@ func putSchemaIfChanged(ctx *pulumi.Context, policyStoreId string, cedarJSON str
     // Apply
     _, err = client.PutSchema(pulumiCtx, &vpapi.PutSchemaInput{
         PolicyStoreId: &policyStoreId,
-        Definition:    &vpapiTypes.SchemaDefinition{CedarJson: &cedarJSON},
+        Definition:    &vpapiTypes.SchemaDefinitionMemberCedarJson{Value: cedarJSON},
     })
     if err != nil {
         return fmt.Errorf("failed to put schema: %w", err)

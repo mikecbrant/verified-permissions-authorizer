@@ -68,6 +68,16 @@ func toOutputs(ins []pulumi.StringOutput) []pulumi.Output {
     return outs
 }
 
+// outputsToInterfaces converts a slice of pulumi.Output to a slice of interface{}
+// suitable for passing to variadic functions like pulumi.All.
+func outputsToInterfaces(ins []pulumi.Output) []interface{} {
+    out := make([]interface{}, len(ins))
+    for i, v := range ins {
+        out[i] = v
+    }
+    return out
+}
+
 func valueOrDefault[T ~string](ptr *T, def T) string { // generic-ish helper for *string
     if ptr == nil {
         return string(def)

@@ -15,11 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
       - name: Install dependencies (workspace)
-        run: pnpm -r install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
       - name: Lint and typecheck SDK
         run: |
           pnpm -r --filter "./packages/sdk/nodejs" lint
           pnpm -r --filter "./packages/sdk/nodejs" typecheck
+      - name: Build SDK CLI
+        run: pnpm --filter "./packages/sdk/nodejs" build
       - name: Validate example AVP assets (SDK CLI)
-        run: npx -y avp-validate --schema infra/authorizer/schema.yaml --policyDir infra/authorizer/policies --mode error
+        run: node ./packages/sdk/nodejs/dist/bin/avp-validate.mjs --schema infra/authorizer/schema.yaml --policyDir infra/authorizer/policies --mode error

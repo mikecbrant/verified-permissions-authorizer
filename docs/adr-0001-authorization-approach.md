@@ -1,6 +1,6 @@
 # ADR 0001: Authorization approach for the Verified Permissions Authorizer provider
 
-Status: Proposed
+Status: Approved
 
 Date: 2025-09-09
 
@@ -21,7 +21,7 @@ This repository ships a Pulumi provider that provisions an AWS Verified Permissi
 - AWS Cognito (optional; can be configured as the Verified Permissions identity source)
 
 ## Infrastructure-as-code posture
-- Consumers own Cedar schema and policy files in their repositories. These are treated as code and versioned alongside application and infra code. No console-driven policy edits.
+- Consumers own Cedar schema and policy files in their repositories. These are treated as code and versioned alongside application and infra code.
 - The provider/resource stack is responsible for creating the Verified Permissions policy store and loading/validating the supplied schema and policies.
 - This approach makes authorization intent explicit, reviewable, and testable in PRs.
 
@@ -37,9 +37,9 @@ This repository ships a Pulumi provider that provisions an AWS Verified Permissi
 
 ## Request-shape requirement
 All information required to make an authorization decision must be derivable from the incoming request. The authorizer does not fetch additional context from application backends to “fill in” missing attributes. The request is expected to carry, at a minimum:
-- Identity: a bearer token whose claims identify the subject (e.g., a `sub` claim for the principal ID). Additional claims (email, roles, tenantId, etc.) may be used by your policies.
-- Tenant context: an identifier that ties the request to a tenant (for tenant-scoped operations). This can come from a claim (e.g., `tenantId`) and/or from request metadata like the hostname, URL path, headers, or variables.
-- Resource identifiers: material that lets policies determine which resource is being accessed. For API Gateway this could be the method ARN or a path-derived ID; for AppSync the API ID and field can be used to map to a resource.
+- Identity: a bearer token whose claims identify the subject (e.g., a `sub` claim for the principal ID).
+- Tenant context: an identifier that ties the request to a tenant (for tenant-scoped operations). For tenant-scoped requests, a `tenantId` value must be present in the URL, query string, or body (for REST), or as a top-level field in GraphQL.
+- Resource identifiers: material that lets policies determine which resource is being accessed. For API Gateway this could be the method ARN or a path-derived ID; for AppSync the API ID and field can be used to map to a resource. We expect concrete identifiers like `ticketId`, `userId`, etc., to be derivable from the request.
 - Action: the operation the caller intends to perform. Your Cedar policies should define actions/action groups that map to your API surface. The bundled authorizer passes a single action (`invoke`) with the request’s resource identifier; consumers typically discriminate on resource and/or enrich policies to reflect their action taxonomy.
 
 Implication: design your APIs so that identity, tenant, resource, and action are present (or derivable deterministically) at the time the authorizer runs.

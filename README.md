@@ -1,18 +1,37 @@
-# Verified Permissions Authorizer Monorepo
+# Verified Permissions Authorizer (Pulumi provider)
 
-This repository is a pnpm + Changesets monorepo containing:
+Policy-based, multi-tenant authorization for small teams—powered by AWS Verified Permissions (Cedar) and Lambda
 
-- `packages/provider`: a Go, bridged Pulumi Component Provider that deploys an AWS Verified Permissions Policy Store and a bundled AWS Lambda Request Authorizer function
-- `packages/lambda-authorizer`: an npm‑publishable TypeScript package that bundles a Lambda Authorizer handler designed to interact with the Policy Store
-- `packages/sdk/nodejs`: the generated Node.js SDK published as `pulumi-verified-permissions-authorizer`
+- Provision an AWS Verified Permissions policy store and a reusable Lambda authorizer compatible with both API Gateway and AppSync.
+- Author your Cedar schema and policies as declarative files in your repo; the stack loads and validates them.
+- Adopt a multi-tenant-first model with clear separation between global (admin) and tenant-scoped actions.
 
-Notes
-- The Lambda runtime is fixed to `nodejs22.x` and is not configurable.
+Read the ADR for the full technical approach, assumptions, and integration guidance: [docs/adr-0001-authorization-approach.md](docs/adr-0001-authorization-approach.md).
+
+## What you get
+
+- A bridged Pulumi Component Provider (Go) that creates a Verified Permissions policy store and deploys a reusable Lambda authorizer.
+- Optional Cognito user pool configured as the Verified Permissions identity source.
+
+
+## Notes
+- The Lambda runtime is fixed to `nodejs22.x`. Ensure your target AWS regions support `nodejs22.x` (see the [AWS Lambda runtime support matrix](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtimes.html)).
+- AWS Verified Permissions is not available in all Regions; ensure your target Region supports it before deploying. See the [AWS Regional Services list](https://aws.amazon.com/about-aws/global-infrastructure/regional-product-services/).
 - AWS region/credentials are inherited from the standard Pulumi AWS provider.
-- The Lambda execution role includes `verifiedpermissions:GetPolicyStore` and `verifiedpermissions:IsAuthorized`.
 - The provider is tightly coupled to the Lambda: changes to `packages/lambda-authorizer` cause a provider release.
 
-See `packages/provider/README.md`, `packages/sdk/nodejs/`, and `packages/lambda-authorizer/README.md` for package‑specific details.
+See `packages/provider/README.md`, `packages/lambda-authorizer/README.md`, and `packages/sdk/nodejs/` for package‑specific details.
+
+### Compatibility
+- API Gateway (REST): Request authorizer mode only.
+- AppSync (GraphQL): Lambda authorizer supported.
+- API Gateway (HTTP APIs): not supported yet.
+
+## Monorepo packages
+
+- `packages/provider`: the Go, bridged Pulumi Component Provider.
+- `packages/lambda-authorizer`: the TypeScript Lambda authorizer implementation used by the provider.
+- `packages/sdk/nodejs`: the generated Node.js SDK published as `pulumi-verified-permissions-authorizer`.
 
 For local pre‑PR checks (Go build/vet/test and workspace lint/type/tests), see [.charlie/preflight.md](.charlie/preflight.md).
 
@@ -35,8 +54,8 @@ Action group enforcement is exact and case-sensitive against the canonical group
 
 ## Deployment considerations and ephemeral environments
 
-- If you plan to deploy this provider and/or spin up short‑lived ephemeral stacks, see [docs/vp-14-ephemeral-vp-stacks-plan.md](docs/vp-14-ephemeral-vp-stacks-plan.md) for a more detailed exploration of possible options.
+- If you plan to deploy this provider and/or spin up short-lived ephemeral stacks, see [docs/vp-14-ephemeral-vp-stacks-plan.md](docs/vp-14-ephemeral-vp-stacks-plan.md).
 
-## Cognito + SES
+## Additional compatibility note
 
-When you opt into Cognito by supplying the top-level `cognito` input on the provider, you can also configure SES-backed email sending via `cognito.sesConfig`. See `packages/provider/README.md` for the full field list and validation rules.
+- Cognito + SES email is supported when `cognito.sesConfig` is provided via the provider inputs (see `packages/provider/README.md`).

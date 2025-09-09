@@ -4,50 +4,14 @@
  */
 import * as pulumi from "@pulumi/pulumi";
 
-type CognitoSignInAlias = "email" | "phone" | "preferredUsername";
-
-type CognitoConfig = {
-  signInAliases?: pulumi.Input<pulumi.Input<CognitoSignInAlias>[]>;
-  sesConfig?: pulumi.Input<{
-    sourceArn: pulumi.Input<string>;
-    from: pulumi.Input<string>;
-    replyToEmail?: pulumi.Input<string>;
-    configurationSet?: pulumi.Input<string>;
-  }>;
-};
-
-type LambdaConfig = {
-  memorySize?: pulumi.Input<number>;
-  reservedConcurrency?: pulumi.Input<number>;
-  provisionedConcurrency?: pulumi.Input<number>;
-};
-
-type DynamoConfig = {
-  enableDynamoDbStream?: pulumi.Input<boolean>;
-};
-
-type AuthorizerWithPolicyStoreArgs = {
-  description?: pulumi.Input<string>;
-  retainOnDelete?: pulumi.Input<boolean>;
-  lambda?: pulumi.Input<LambdaConfig>;
-  dynamo?: pulumi.Input<DynamoConfig>;
-  cognito?: pulumi.Input<CognitoConfig>;
-};
+import type {
+  AuthorizerCognitoOutputs,
+  AuthorizerDynamoOutputs,
+  AuthorizerLambdaOutputs,
+  AuthorizerWithPolicyStoreArgs,
+} from "./types.js";
 
 // Output group shapes
-type AuthorizerLambdaOutputs = {
-  authorizerFunctionArn: pulumi.Output<string>;
-  roleArn: pulumi.Output<string>;
-};
-type AuthorizerDynamoOutputs = {
-  AuthTableArn: pulumi.Output<string>;
-  AuthTableStreamArn: pulumi.Output<string | undefined>;
-};
-type AuthorizerCognitoOutputs = {
-  userPoolId: pulumi.Output<string | undefined>;
-  userPoolArn: pulumi.Output<string | undefined>;
-  userPoolClientIds: pulumi.Output<string[] | undefined>;
-};
 
 class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   public readonly policyStoreId!: pulumi.Output<string>;
@@ -101,14 +65,14 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
     // dynamo group
     const dynamo = g("dynamo");
     this.dynamo = {
-      AuthTableArn: dynamo.apply((o) => {
-        if (!o?.AuthTableArn) {
-          throw new Error("Required output not set: dynamo.AuthTableArn");
+      authTableArn: dynamo.apply((o) => {
+        if (!o?.authTableArn) {
+          throw new Error("Required output not set: dynamo.authTableArn");
         }
-        return o.AuthTableArn as string;
+        return o.authTableArn as string;
       }),
-      AuthTableStreamArn: dynamo.apply(
-        (o) => (o?.AuthTableStreamArn as string | undefined) ?? undefined,
+      authTableStreamArn: dynamo.apply(
+        (o) => (o?.authTableStreamArn as string | undefined) ?? undefined,
       ),
     };
 
@@ -128,15 +92,10 @@ class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   }
 }
 
-export {
-  // Output group shapes (exported for convenience in TS projects)
-  type AuthorizerCognitoOutputs,
-  type AuthorizerDynamoOutputs,
-  type AuthorizerLambdaOutputs,
-  AuthorizerWithPolicyStore,
-  type AuthorizerWithPolicyStoreArgs,
-  type CognitoConfig,
-  type CognitoSignInAlias,
-  type DynamoConfig,
-  type LambdaConfig,
-};
+export { AuthorizerWithPolicyStore };
+export type {
+  AuthorizerCognitoOutputs,
+  AuthorizerDynamoOutputs,
+  AuthorizerLambdaOutputs,
+  AuthorizerWithPolicyStoreArgs,
+} from "./types.js";

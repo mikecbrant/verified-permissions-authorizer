@@ -13,11 +13,13 @@
     "changeset": "changeset",
     "release": "changeset version && pnpm -r build",
     "test": "pnpm -r test && pnpm go:test",
+    "validate:avp": "npx -y avp-validate --schema infra/authorizer/schema.yaml --policyDir infra/authorizer/policies --mode error",
     "go:lint": "bash -lc 'cd packages/provider && go mod tidy && go vet ./...'",
-    "go:test": "bash -lc 'if command -v go >/dev/null 2>&1; then cd packages/provider && go mod tidy && go test ./... -coverprofile=coverage.out -covermode=count; else echo \"[skip] go not installed; skipping provider tests locally\"; fi'",
+    "go:test": "bash -lc \"if command -v go >/dev/null 2>&1; then cd packages/provider && go mod tidy && go test ./... -coverprofile=coverage.out -covermode=count; else echo '[skip] go not installed; skipping provider tests locally'; fi\"",
     "format:go": "bash -lc 'gofmt -s -w packages/provider'"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.27.8"
+    "@changesets/cli": "^2.27.8",
+    "yaml": "^2.5.1"
   }
 }

@@ -14,6 +14,25 @@ Notes
 
 See `packages/provider/README.md`, `packages/sdk/nodejs/`, and `packages/lambda-authorizer/README.md` for package‑specific details.
 
+For local pre‑PR checks (Go build/vet/test and workspace lint/type/tests), see [.charlie/preflight.md](.charlie/preflight.md).
+
+## CLI: avp-validate
+
+The Node SDK ships a small CLI that validates AVP assets locally (no AWS calls):
+
+```
+npx avp-validate --schema ./infra/authorizer/schema.yaml --policyDir ./infra/authorizer/policies --mode error
+# optional canaries
+npx avp-validate --schema ./infra/authorizer/schema.yaml --policyDir ./infra/authorizer/policies --canary ./infra/authorizer/canaries.yaml
+```
+
+- `--schema` (required): path to `schema.yaml`/`schema.yml` or `schema.json`
+- `--policyDir` (required): directory containing `.cedar` files (recursively discovered)
+- `--canary` (optional): YAML file with canary cases `{ principal, action, resource, expect }`
+- `--mode` (optional): `off|warn|error` (default `error`)
+
+Action group enforcement is exact and case-sensitive against the canonical groups (including `Global*` variants).
+
 ## Deployment considerations and ephemeral environments
 
 - If you plan to deploy this provider and/or spin up short‑lived ephemeral stacks, see [docs/vp-14-ephemeral-vp-stacks-plan.md](docs/vp-14-ephemeral-vp-stacks-plan.md) for a more detailed exploration of possible options.

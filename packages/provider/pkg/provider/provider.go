@@ -49,6 +49,9 @@ type AuthorizerArgs struct {
     // Optional Cognito configuration. When provided, a Cognito User Pool will be provisioned
     // and configured as the Verified Permissions Identity Source for the created policy store.
     Cognito *CognitoConfig `pulumi:"cognito,optional"`
+    // Verified Permissions schema & policy asset ingestion and validation settings.
+    // See VerifiedPermissionsConfig for details.
+    VerifiedPermissions *VerifiedPermissionsConfig `pulumi:"verifiedPermissions,optional"`
 }
 
 // LambdaConfig exposes a narrow set of tuning knobs for the Lambda authorizer.
@@ -89,8 +92,8 @@ type CognitoOutputs struct {
 
 // DynamoOutputs groups DynamoDB auth table outputs under the `dynamo` object.
 type DynamoOutputs struct {
-    AuthTableArn       pulumi.StringOutput    `pulumi:"AuthTableArn"`
-    AuthTableStreamArn pulumi.StringOutput `pulumi:"AuthTableStreamArn,optional"`
+    AuthTableArn       pulumi.StringOutput `pulumi:"authTableArn"`
+    AuthTableStreamArn pulumi.StringOutput `pulumi:"authTableStreamArn,optional"`
 }
 
 // LambdaOutputs groups Lambda authorizer outputs under the `lambda` object.
@@ -146,6 +149,13 @@ func NewAuthorizerWithPolicyStore(
     store, err := awsvp.NewPolicyStore(ctx, fmt.Sprintf("%s-store", name), storeArgs, retOpts...)
     if err != nil {
         return nil, err
+    }
+
+    // 1a) Optional: Apply schema and ingest policies from assets
+    if args.VerifiedPermissions != nil {
+        if err := applySchemaAndPolicies(ctx, name, store, *args.VerifiedPermissions); err != nil {
+            return nil, err
+        }
     }
 
     // 1b) DynamoDB single-table for auth/identity/roles data
@@ -633,4 +643,5 @@ func provisionCognito(
 // Note: Identity Pools, lifecycle triggers, templates, and other advanced Cognito
 // options were intentionally removed from the public configuration surface. The
 // provider creates a minimal User Pool + client and binds it as the VP identity source.
+
 

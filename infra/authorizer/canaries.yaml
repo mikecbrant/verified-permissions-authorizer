@@ -1,0 +1,5 @@
+cases:
+  - principal: { entityType: User, entityId: user-1 }
+    action: Get
+    resource: { entityType: Ticket, entityId: t-1 }
+    expect: DENY

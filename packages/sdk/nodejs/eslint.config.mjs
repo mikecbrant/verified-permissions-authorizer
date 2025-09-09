@@ -9,7 +9,7 @@ import promisePlugin from 'eslint-plugin-promise'
 // rules/configs below take precedence when overlaps occur.
 let shared = []
 try {
-  const m = await import('@mikecbrant/ts-tooling/eslint/flat')
+  const m = await import('@mikecbrant/typescript-tooling/eslint/flat')
   shared = Array.isArray(m.default) ? m.default : []
 } catch {}
 

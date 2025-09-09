@@ -299,7 +299,7 @@ func putSchemaIfChanged(ctx *pulumi.Context, policyStoreId string, cedarJSON str
     if err == nil && getOut.Definition != nil && getOut.Definition.CedarJson != nil {
         current = *getOut.Definition.CedarJson
     }
-    if normalizeJSON(current) == normalizeJSON(cedarJSON) {
+    if normalizeJson(current) == normalizeJson(cedarJSON) {
         ctx.Log.Info("AVP: schema unchanged; skipping PutSchema", &pulumi.LogArgs{})
         return nil
     }

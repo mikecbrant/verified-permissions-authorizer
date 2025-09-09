@@ -21,7 +21,7 @@ The Node SDK ships a small CLI that validates AVP assets locally (no AWS calls):
 ```
 npx avp-validate --schema ./infra/authorizer/schema.yaml --policyDir ./infra/authorizer/policies --mode error
 # optional canaries
-npx avp-validate --schema ./infra/authorizer/schema.yaml --policyDir ./infra/authorizer/policies --canary ./infra/authorize/canaries.yaml
+npx avp-validate --schema ./infra/authorizer/schema.yaml --policyDir ./infra/authorizer/policies --canary ./infra/authorizer/canaries.yaml
 ```
 
 - `--schema` (required): path to `schema.yaml`/`schema.yml` or `schema.json`

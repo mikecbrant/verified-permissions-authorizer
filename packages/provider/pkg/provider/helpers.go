@@ -19,8 +19,8 @@ func loadAwsConfig(ctx context.Context, region string) (awsv2.Config, error) {
     return awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 }
 
-// normalizeJSON minifies JSON text for stable equality comparison; when input is empty returns empty string.
-func normalizeJSON(s string) string {
+// normalizeJson minifies JSON text for stable equality comparison; when input is empty returns empty string.
+func normalizeJson(s string) string {
     if strings.TrimSpace(s) == "" {
         return ""
     }

@@ -106,7 +106,7 @@ An example set is included under `/infra` so it can be deployed alongside the in
 
 - Schema: `infra/authorizer/schema.yaml`
 - Policies: `infra/authorizer/policies/*.cedar`
-- Canaries: `infra/authorize/canaries.yaml`
+- Canaries: `infra/authorizer/canaries.yaml`
 
 ### Local validation (no AWS)
 

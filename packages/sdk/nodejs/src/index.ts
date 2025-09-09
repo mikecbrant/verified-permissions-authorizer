@@ -12,7 +12,6 @@ import type {
 } from "./types.js";
 
 // Output group shapes
-type _T = unknown; // ensure this file remains a value module for ESM
 
 class AuthorizerWithPolicyStore extends pulumi.ComponentResource {
   public readonly policyStoreId!: pulumi.Output<string>;

@@ -7,7 +7,7 @@
   },
   "author": "",
   "dependencies": {
-    "@pulumi/pulumi": "*",
-    "pulumi-verified-permissions-authorizer": "file:../packages/sdk/nodejs"
+    "@pulumi/pulumi": "^3.191.0",
+    "pulumi-verified-permissions-authorizer": "workspace:*"
   }
 }

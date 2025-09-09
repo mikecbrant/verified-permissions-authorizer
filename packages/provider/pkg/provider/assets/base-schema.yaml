@@ -1,4 +1,4 @@
-base-namespace-example:
+vpauthorizer.base:
   entityTypes:
     Tenant:
       # Homogeneous tree (self-only memberOfTypes)

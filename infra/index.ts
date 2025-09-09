@@ -11,8 +11,8 @@ const authz = new AuthorizerWithPolicyStore("authz", {
   verifiedPermissions: {
     // Using provider defaults: ./authorizer/schema.yaml and ./authorizer/policies
     // actionGroupEnforcement defaults to 'error'
-    // Uncomment to run canaries as part of deploy (defaults to ./authorize/canaries.yaml when present)
-    // canaryFile: "./authorizer/canaries.yaml",
+    // Run canaries in this environment (explicit path under ./authorizer)
+    canaryFile: "./authorizer/canaries.yaml",
   },
 });
 

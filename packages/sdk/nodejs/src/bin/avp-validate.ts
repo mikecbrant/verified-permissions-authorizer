@@ -162,8 +162,20 @@ const args = new Map<string, string>();
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
   const m = a.match(/^--([^=]+)=(.*)$/);
-  if (m) args.set(m[1], m[2]);
-  else if (a.startsWith("--")) args.set(a.slice(2), "true");
+  if (m) {
+    args.set(m[1], m[2]);
+    continue;
+  }
+  if (a.startsWith("--")) {
+    const k = a.slice(2);
+    const next = process.argv[i + 1];
+    if (next && !next.startsWith("--")) {
+      args.set(k, next);
+      i++; // consume value token
+    } else {
+      args.set(k, "true");
+    }
+  }
 }
 
 const schemaArg = args.get("schema");

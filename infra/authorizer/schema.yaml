@@ -1,4 +1,4 @@
-vpauthorizer.ticketing.demo
+vpauthorizer.ticketing.demo:
   # Example Cedar JSON schema expressed in YAML. Single namespace is required by AVP.
   entityTypes:
     Tenant:

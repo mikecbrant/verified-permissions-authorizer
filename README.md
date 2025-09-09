@@ -14,7 +14,7 @@ Notes
 
 See `packages/provider/README.md`, `packages/sdk/nodejs/`, and `packages/lambda-authorizer/README.md` for package‑specific details.
 
-For local pre‑PR checks (Go build/vet/test and workspace lint/type/tests), see [.Charlie/preflight.md](.Charlie/preflight.md).
+For local pre‑PR checks (Go build/vet/test and workspace lint/type/tests), see [.charlie/preflight.md](.charlie/preflight.md).
 
 ## CLI: avp-validate
 

@@ -19,71 +19,46 @@ Decision drivers
 In AWS SDK terms (Go v2 or JS v3), items are maps of attribute names to AttributeValues. Only attributes listed above participate in keys/indexes.
 
 ## Item types (entities)
-Every item includes a `Type` attribute (String) for diagnostics/introspection and must adhere to the key layouts below. Attributes listed are those relevant to authorization flows; additional attributes are allowed. Access patterns are colocated with each entity, grouped by index.
+Every item includes a `Type` attribute (String) for diagnostics/introspection and must adhere to the key layouts below. Attributes listed are those relevant to authorization flows; additional attributes are allowed.
 
 - Tenant
-   - Keys (table): `PK = TENANT#{tenantId}`; `SK = TENANT#{tenantId}`
-     - Access (table):
-       - Get tenant by id: GetItem with full primary key `(PK, SK)`.
-   - GSI1 (name): `GSI1PK = TENANT_NAME#{name}`; `GSI1SK = TENANT_NAME#{name}` (enforces unique tenant names)
-     - Access (GSI1):
-       - Get tenant by name: Query with equality on `GSI1PK` (exact match; limit 1).
+   - Keys: `PK = TENANT#{tenantId}`; `SK = TENANT#{tenantId}`
+   - GSI1: `GSI1PK = TENANT_NAME#{name}`; `GSI1SK = TENANT_NAME#{name}` (enforces unique tenant names)
    - Attributes: `tenantId` (ULID), `name`
-
 - User
-   - Keys (table): `PK = USER#{userId}`; `SK = USER#{userId}`
-     - Access (table):
-       - Get user by id: GetItem with full primary key `(PK, SK)`.
+   - Keys: `PK = USER#{userId}`; `SK = USER#{userId}`
    - Attributes: `userId` (ULID), `email`, `phone`, `preferredUsername`, `givenName`, `familyName`, `roles` (array of global role IDs)
-
 - UserEmail (internal uniqueness guard)
-   - Keys (table): `PK = USER_EMAIL#{email}`; `SK = USER_EMAIL#{email}`
-   - Access: no runtime reads; used only in write-time uniqueness transactions.
+   - Keys: `PK = USER_EMAIL#{email}`; `SK = USER_EMAIL#{email}`
    - Attributes: `email`, `userId`
-
 - UserPhone (internal uniqueness guard)
-   - Keys (table): `PK = USER_PHONE#{phone}`; `SK = USER_PHONE#{phone}`
-   - Access: no runtime reads; used only in write-time uniqueness transactions.
+   - Keys: `PK = USER_PHONE#{phone}`; `SK = USER_PHONE#{phone}`
    - Attributes: `phone`, `userId`
-
 - UserPreferredUsername (internal uniqueness guard)
-   - Keys (table): `PK = USER_PREFERREDUSERNAME#{preferredUsername}`; `SK = USER_PREFERREDUSERNAME#{preferredUsername}`
-   - Access: no runtime reads; used only in write-time uniqueness transactions.
+   - Keys: `PK = USER_PREFERREDUSERNAME#{preferredUsername}`; `SK = USER_PREFERREDUSERNAME#{preferredUsername}`
    - Attributes: `preferredUsername`, `userId`
-
 - Role
-   - Keys (table; name by scope): `PK = ROLE_SCOPE#{scope}`; `SK = ROLE_NAME#{name}`
-     - Access (table):
-       - Get role by scope+name: GetItem with full primary key `(PK, SK)`.
+   - Keys (name by scope): `PK = ROLE_SCOPE#{scope}`; `SK = ROLE_NAME#{name}`
    - GSI1 (lookup by id): `GSI1PK = ROLE#{roleId}`; `GSI1SK = ROLE#{roleId}`
-     - Access (GSI1):
-       - Resolve role definition by roleId: Query with equality on `GSI1PK` (exact match; limit 1).
-       - Note: if the intent is to require GetItem by full primary key for this lookup, please confirm; current design resolves by roleId via GSI1 as we do not have `(scope,name)` when only `roleId` is provided.
    - Attributes: `roleId` (ULID), `name`, `scope` ("tenant" or "global")
-
 - TenantGrant (per-tenant role membership for a user)
-   - Keys (table; by-tenant, by-user): `PK = TENANT#{tenantId}`; `SK = USER#{userId}`
-     - Access (table):
-       - Check a user’s membership in a specific tenant: GetItem with full primary key `(PK, SK)`.
+   - Keys (by-tenant, by-user): `PK = TENANT#{tenantId}`; `SK = USER#{userId}`
    - GSI1 (reverse lookup): `GSI1PK = USER#{userId}`; `GSI1SK = TENANT#{tenantId}`
-     - Access (GSI1):
-       - List a user’s tenant grants: Query with equality on `GSI1PK` (page to list all memberships and role IDs).
    - GSI2 (id): `GSI2PK = TENANT_GRANT#{tenantGrantId}`; `GSI2SK = TENANT_GRANT#{tenantGrantId}`
-     - Access (GSI2):
-       - Lookup by grant id: Query with equality on `GSI2PK` (exact match; limit 1).
    - Attributes: `tenantGrantId` (ULID), `tenantId`, `userId`, `roles` (array of role IDs)
-
 - Policy (tracks AVP static policy metadata)
-   - Keys (table; name index): `PK = GLOBAL`; `SK = POLICY_NAME#{name}`
-     - Access (table):
-       - Resolve policy metadata by name prefix: Query with `PK = GLOBAL` and `begins_with(SK, "POLICY_NAME#prefix")`.
-       - Get policy metadata by exact name: GetItem with full primary key `(PK, SK)`.
+   - Keys (name index): `PK = GLOBAL`; `SK = POLICY_NAME#{name}` (supports prefix queries by name)
    - GSI1 (id): `GSI1PK = POLICY#{policyId}`; `GSI1SK = POLICY#{policyId}`
-     - Access (GSI1):
-       - Resolve policy metadata by id: Query with equality on `GSI1PK` (exact match; limit 1).
    - Attributes: `policyId` (from Verified Permissions), `name`
 
-These patterns avoid cross-partition fan-out and align with DynamoDB single-table best practices, documenting precisely which reads are GetItem (full primary key) vs Query on GSIs.
+## Access patterns (authorizer/readers)
+- Resolve a user’s tenant grants: query `GSI1` with `GSI1PK = USER#{userId}`; page to list all tenant memberships and role IDs.
+- Resolve role definition by roleId: query `GSI1` with `GSI1PK = ROLE#{roleId}` (exact match) to read role `name` and `scope`.
+- Resolve tenant by name: query `GSI1` with `GSI1PK = TENANT_NAME#{name}`.
+- Resolve policy metadata by name prefix: query table with `PK = GLOBAL` and `begins_with(SK, "POLICY_NAME#prefix")`.
+- Resolve policy metadata by id: query `GSI1` with `GSI1PK = POLICY#{policyId}`.
+
+These patterns avoid cross-partition fan-out and align with DynamoDB best practices for single-table designs.
 
 ## Uniqueness and transactions
 Use DynamoDB condition expressions within `TransactWriteItems` to enforce uniqueness atomically:

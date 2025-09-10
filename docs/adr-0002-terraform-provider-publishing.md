@@ -132,7 +132,7 @@ Failure handling
 - Internal documentation under `.charlie/` encodes the synchronized versioning and release workflow requirements (Changesets usage, parallel Pulumi/Terraform publish, and the common post‑publish version update step).
 
 ## Assumptions
-- The provider will be implemented in Go using the official Terraform Plugin Framework (protocol v6) unless we decide otherwise during spec review.
+- The provider will be implemented in Go using common logic to the terraform provider.
 - We will target Linux (amd64/arm64), macOS (amd64/arm64), and Windows (amd64) initially.
 - This repo remains the single source of truth for the Lambda code and the Pulumi provider; the Terraform provider will live alongside them in this monorepo.
 - We intend to reuse the exact same Go logic across providers wherever possible to guarantee behavior parity.

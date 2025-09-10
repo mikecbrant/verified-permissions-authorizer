@@ -2,11 +2,11 @@ package dynamo
 
 import (
      "context"
-     "fmt"
+     "errors"
 
      "github.com/aws/aws-sdk-go-v2/service/dynamodb"
      "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-     awssdk "github.com/mikecbrant/verified-permissions-authorizer/packages/provider/pkg/aws-sdk"
+     "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/logging"
 )
 
 // TxPut defines a put with a standard not-exists condition for (PK, SK).
@@ -22,9 +22,9 @@ type TxCheck struct{
 
 // WriteTransaction composes a TransactWriteItems call using the provided client.
 // It applies not-exists conditions for each TxPut and classifies errors.
-func WriteTransaction(ctx context.Context, client interface{ TransactWriteItems(context.Context, *dynamodb.TransactWriteItemsInput, ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) }, puts []TxPut, checks []TxCheck, logger awssdk.Logger) error {
-     if logger == nil { logger = awssdk.NopLogger{} }
-     if len(puts) == 0 && len(checks) == 0 { return nil }
+func WriteTransaction(ctx context.Context, client interface{ TransactWriteItems(context.Context, *dynamodb.TransactWriteItemsInput, ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) }, puts []TxPut, checks []TxCheck, logger logging.Logger) error {
+     if logger == nil { logger = logging.NopLogger{} }
+     if len(puts) == 0 && len(checks) == 0 { return errors.New("dynamo: WriteTransaction requires at least one put or check") }
      var actions []types.TransactWriteItem
      // Puts with uniqueness condition on PK and SK
      for i, p := range puts {
@@ -34,14 +34,14 @@ func WriteTransaction(ctx context.Context, client interface{ TransactWriteItems(
              Item:                p.Item,
              ConditionExpression: &cond,
          }})
-         logger.Debugf("tx.put[%d]: %s", i, previewKeys(p.Item))
+         logger.Debugf("tx.put[%d]", i)
      }
      for i, c := range checks {
          actions = append(actions, types.TransactWriteItem{ConditionCheck: &types.ConditionCheck{
              Key:                 c.Key,
              ConditionExpression: &c.ConditionExpression,
          }})
-         logger.Debugf("tx.check[%d]: %s", i, previewKeys(c.Key))
+         logger.Debugf("tx.check[%d]", i)
      }
      _, err := client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{ TransactItems: actions })
      if err != nil { return classify(err) }
@@ -49,11 +49,3 @@ func WriteTransaction(ctx context.Context, client interface{ TransactWriteItems(
      return nil
 }
 
-// previewKeys renders a minimal key preview for logs; never include full item content.
-func previewKeys(m map[string]types.AttributeValue) string {
-     getS := func(k string) string {
-         if v, ok := m[k].(*types.AttributeValueMemberS); ok { return v.Value }
-         return ""
-     }
-     return fmt.Sprintf("PK=%q SK=%q GSI1PK=%q GSI1SK=%q", getS("PK"), getS("SK"), getS("GSI1PK"), getS("GSI1SK"))
-}

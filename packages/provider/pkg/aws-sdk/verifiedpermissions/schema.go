@@ -15,8 +15,19 @@ type API interface {
      PutSchema(context.Context, *vpapi.PutSchemaInput, ...func(*vpapi.Options)) (*vpapi.PutSchemaOutput, error)
 }
 
-// PutSchemaIfChanged fetches the current schema and only issues PutSchema when
-// the minified Cedar JSON differs.
+// PutSchemaIfChanged fetches the current schema for the given policy store and
+// issues PutSchema only when a semantic change is detected.
+//
+// Comparison details:
+// - The function normalizes both the current and desired Cedar JSON by
+//   unmarshaling and re-marshaling ("minification"). This makes comparison
+//   resilient to whitespace and key-order differences.
+// - If the normalized strings are equal, the call is a no-op and returns nil.
+// - Otherwise, PutSchema is invoked with the provided Cedar JSON.
+//
+// Error handling:
+// - Any error from GetSchema or PutSchema is returned to the caller for
+//   handling at a higher level; this function does not swallow errors.
 func PutSchemaIfChanged(ctx context.Context, api API, policyStoreId string, cedarJSON string) error {
      if api == nil { return fmt.Errorf("api is nil") }
      currentOut, err := api.GetSchema(ctx, &vpapi.GetSchemaInput{PolicyStoreId: &policyStoreId})

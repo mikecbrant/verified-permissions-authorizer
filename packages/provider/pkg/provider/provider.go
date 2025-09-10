@@ -151,14 +151,7 @@ func NewAuthorizerWithPolicyStore(
         return nil, err
     }
 
-    // 1a) Optional: Apply schema and ingest policies from assets
-    if args.VerifiedPermissions != nil {
-        if err := applySchemaAndPolicies(ctx, name, store, *args.VerifiedPermissions); err != nil {
-            return nil, err
-        }
-    }
-
-    // 1b) DynamoDB single-table for auth/identity/roles data
+    // 1a) DynamoDB single-table for auth/identity/roles data
     // Always parent to the component; retain on delete only when retention is enabled
     tableOpt := retOpts
 
@@ -212,6 +205,20 @@ func NewAuthorizerWithPolicyStore(
     table, err := awsdynamodb.NewTable(ctx, fmt.Sprintf("%s-tenant", name), targs, tableOpt...)
     if err != nil {
         return nil, err
+    }
+
+    // 1b) Optional: Apply schema and ingest policies from assets
+    // Ensure the table exists before policies so that future transactional patterns can write
+    // metadata rows ahead of Verified Permissions policy creation.
+    if args.VerifiedPermissions != nil {
+        applied := table.Arn.ApplyT(func(_ string) (string, error) {
+            if err := applySchemaAndPolicies(ctx, name, store, *args.VerifiedPermissions); err != nil {
+                return "", err
+            }
+            return "ok", nil
+        }).(pulumi.StringOutput)
+        // Keep a reference so the apply executes as part of the update plan.
+        ctx.Export(fmt.Sprintf("%s-avpSchemaApplied", name), applied)
     }
 
     // 2) IAM Role

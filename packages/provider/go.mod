@@ -10,6 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.27.16
 	github.com/bmatcuk/doublestar/v4 v4.7.1
 	gopkg.in/yaml.v3 v3.0.1
+    github.com/mikecbrant/verified-permissions-authorizer/providers/internal v0.0.0
 )
 
 require (
@@ -102,3 +103,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/frand v1.4.2 // indirect
 )
+
+replace github.com/mikecbrant/verified-permissions-authorizer/providers/internal => ../../providers/internal

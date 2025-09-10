@@ -1,19 +1,15 @@
 package provider
 
 import (
-    "encoding/json"
     "fmt"
     "os"
     "path/filepath"
-    "regexp"
     "sort"
     "strings"
 
-    vpapi "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
-    vpapiTypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
     awsvp "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/verifiedpermissions"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-    "gopkg.in/yaml.v3"
+    sharedavp "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/avp"
 )
 
 // VerifiedPermissionsConfig configures where the provider should find the AVP schema (YAML or JSON)
@@ -56,14 +52,17 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
     }
 
     // Read and parse schema (YAML or JSON → JSON string)
-    cedarJSON, ns, actions, err := loadAndValidateSchema(ctx, schemaPath)
+    cedarJSON, ns, actions, warns, err := sharedavp.LoadAndValidateSchema(schemaPath)
     if err != nil {
         return err
+    }
+    for _, w := range warns {
+        ctx.Log.Warn("AVP: "+w, &pulumi.LogArgs{})
     }
 
     // Action-group enforcement (schema-level, based on action names)
     agMode := strings.ToLower(valueOrDefault(cfg.ActionGroupEnforcement, "error"))
-    if violations, err := enforceActionGroups(actions, agMode); err != nil {
+    if violations, err := sharedavp.EnforceActionGroups(actions, agMode); err != nil {
         return err
     } else if len(violations) > 0 && agMode == "warn" {
         ctx.Log.Warn(fmt.Sprintf("AVP: actions not aligned to canonical action groups %v: %s", canonicalActionGroups, strings.Join(violations, ", ")), &pulumi.LogArgs{})
@@ -78,7 +77,7 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
             return "", fmt.Errorf("unexpected policy store ARN: %s", arn)
         }
         regionName := parts[3]
-        if err := putSchemaIfChanged(ctx, id, cedarJSON, regionName); err != nil {
+        if err := sharedavp.PutSchemaIfChanged(ctx.Context(), id, cedarJSON, regionName); err != nil {
             return "", err
         }
         ctx.Log.Info(fmt.Sprintf("AVP: schema applied for namespace %q (no-op when unchanged)", ns), &pulumi.LogArgs{})
@@ -86,7 +85,7 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
     }).(pulumi.StringOutput)
 
     // Collect policy files (*.cedar under policyDir)
-    files, err := globRecursive(policyDir, "**/*.cedar")
+    files, err := sharedavp.CollectPolicyFiles(policyDir)
     if err != nil {
         return fmt.Errorf("failed to enumerate policies under %s: %w", policyDir, err)
     }
@@ -129,11 +128,14 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
     }
 
     // Optional: canary checks when a file is provided or a default path exists
-    // Default: ./authorize/canaries.yaml
+    // Default: ./authorizer/canaries.yaml (fallback to legacy ./authorize/canaries.yaml for backward compatibility)
     if cfg.CanaryFile == nil || strings.TrimSpace(*cfg.CanaryFile) == "" {
-        def := "./authorize/canaries.yaml"
-        if _, err := os.Stat(def); err == nil {
-            cfg.CanaryFile = &def
+        newDef := "./authorizer/canaries.yaml"
+        oldDef := "./authorize/canaries.yaml"
+        if _, err := os.Stat(newDef); err == nil {
+            cfg.CanaryFile = &newDef
+        } else if _, err := os.Stat(oldDef); err == nil {
+            cfg.CanaryFile = &oldDef
         }
     }
     if cfg.CanaryFile != nil && strings.TrimSpace(*cfg.CanaryFile) != "" {
@@ -142,10 +144,20 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
             cwd, _ := os.Getwd()
             cf = filepath.Join(cwd, cf)
         }
-        canaryDeps := append([]pulumi.Output{schemaApplied}, toOutputs(policyIDs)...)
+        canaryDeps := append([]pulumi.Output{schemaApplied, store.ID().ToStringOutput(), store.Arn}, toOutputs(policyIDs)...)
         depsAny := outputsToInterfaces(canaryDeps)
-        canaryStatus := pulumi.All(depsAny...).ApplyT(func(_ []interface{}) (string, error) {
-            if err := runCombinedCanaries(ctx, store, cf, agMode); err != nil {
+        canaryStatus := pulumi.All(depsAny...).ApplyT(func(args []interface{}) (string, error) {
+            id, ok1 := args[1].(string)
+            arn, ok2 := args[2].(string)
+            if !ok1 || id == "" || !ok2 || arn == "" {
+                return "", fmt.Errorf("failed to resolve policy store id/arn for canary execution")
+            }
+            parts := strings.Split(arn, ":")
+            if len(parts) < 4 {
+                return "", fmt.Errorf("unexpected policy store ARN: %s", arn)
+            }
+            region := parts[3]
+            if err := sharedavp.RunCombinedCanaries(ctx.Context(), region, id, cf, agMode); err != nil {
                 return "", err
             }
             return "ok", nil

@@ -29,5 +29,5 @@ All of the above should pass locally before you open or update a PR.
   - After both succeed, run a single common step that updates repository version information (e.g., changelogs, tags) and commits back to the default branch.
 - Repository layout:
   - Terraform provider source lives under `providers/terraform`.
-  - Pulumi provider source lives under `providers/pulumi`.
+  - Pulumi provider source lives under `packages/provider` (Go Pulumi Component Provider).
   - Shared Go logic used by both providers lives in common packages within `providers/` (e.g., `providers/internal`), so both providers use the exact same implementation wherever possible.

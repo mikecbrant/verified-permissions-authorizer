@@ -138,10 +138,10 @@ jobs:
       - name: Build Lambda (to embed)
         run: pnpm --filter verified-permissions-lambda-authorizer build
 
-      - name: Copy built lambda into provider assets
+      - name: Copy built lambda into shared assets (for Pulumi and Terraform)
         run: |
-          mkdir -p packages/provider/pkg/provider/assets
-          cp packages/lambda-authorizer/dist/index.mjs packages/provider/pkg/provider/assets/index.mjs
+          mkdir -p providers/internal/assets/lambda
+          cp packages/lambda-authorizer/dist/index.mjs providers/internal/assets/lambda/index.mjs
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -166,7 +166,7 @@ jobs:
           cp "$BIN" /tmp/pkg/
           tar czf pulumi-resource-verified-permissions-authorizer-v${{ needs.version_or_publish.outputs.provider_version }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C /tmp/pkg $(basename "$BIN")
 
-      - name: Upload release assets
+      - name: Upload release assets (Pulumi)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version_or_publish.outputs.provider_version }}
@@ -187,3 +187,128 @@ jobs:
           tmp=$(mktemp)
           jq ".version = \"$ver\"" packages/provider/schema.json > "$tmp" && mv "$tmp" packages/provider/schema.json
           npx pulumi@latest package publish packages/provider/schema.json --readme packages/provider/README.md
+
+  build_and_publish_tf_provider:
+    name: Build and Publish Terraform Provider
+    needs: version_or_publish
+    if: needs.version_or_publish.outputs.should_release_provider == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Lambda (to embed)
+        run: pnpm --filter verified-permissions-lambda-authorizer build
+
+      - name: Copy built lambda into shared assets
+        run: |
+          mkdir -p providers/internal/assets/lambda
+          cp packages/lambda-authorizer/dist/index.mjs providers/internal/assets/lambda/index.mjs
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'providers/terraform/go.mod'
+
+      - name: Build Terraform provider binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          cd providers/terraform/cmd/terraform-provider-vpauthorizer
+          go build -ldflags "-s -w -X main.version=${{ needs.version_or_publish.outputs.provider_version }}" -o terraform-provider-vpauthorizer
+          cd -
+          BIN_DIR=providers/terraform/cmd/terraform-provider-vpauthorizer
+          BIN=${BIN_DIR}/terraform-provider-vpauthorizer
+          VER=${{ needs.version_or_publish.outputs.provider_version }}
+          RENAMED=${BIN_DIR}/terraform-provider-vpauthorizer_v${VER}
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            mv "$BIN" "${BIN}.exe"
+            BIN="${BIN}.exe"
+            RENAMED="${RENAMED}.exe"
+          fi
+          mv "$BIN" "$RENAMED"
+          OS=${{ matrix.goos }}
+          ARCH=${{ matrix.goarch }}
+          ZIP=terraform-provider-vpauthorizer_${VER}_${OS}_${ARCH}.zip
+          (cd "$BIN_DIR" && zip -9 ../../../../$ZIP $(basename "$RENAMED"))
+      - name: Upload TF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: terraform-provider-vpauthorizer_${{ needs.version_or_publish.outputs.provider_version }}_${{ matrix.goos }}_${{ matrix.goarch }}.zip
+
+  aggregate_and_publish_tf:
+    name: Aggregate and publish TF assets
+    needs: [version_or_publish, build_and_publish_tf_provider]
+    if: needs.version_or_publish.outputs.should_release_provider == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all TF artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tf-*
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          sha256sum terraform-provider-vpauthorizer_${{ needs.version_or_publish.outputs.provider_version }}_*_*.zip > SHA256SUMS
+
+      - name: Import GPG key (if available)
+        if: ${{ secrets.TERRAFORM_GPG_PRIVATE_KEY != '' }}
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.TERRAFORM_GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.TERRAFORM_GPG_PASSPHRASE }}
+
+      - name: Sign checksums (if GPG present)
+        if: ${{ secrets.TERRAFORM_GPG_PRIVATE_KEY != '' }}
+        run: |
+          gpg --batch --yes --detach-sign --armor -o SHA256SUMS.sig SHA256SUMS
+
+      - name: Upload Terraform release assets (required)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version_or_publish.outputs.provider_version }}
+          files: |
+            terraform-provider-vpauthorizer_${{ needs.version_or_publish.outputs.provider_version }}_*_*.zip
+            SHA256SUMS
+
+      - name: Upload Terraform signature (optional)
+        if: ${{ secrets.TERRAFORM_GPG_PRIVATE_KEY != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version_or_publish.outputs.provider_version }}
+          files: |
+            SHA256SUMS.sig

@@ -1,7 +1,6 @@
 package provider
 
 import (
-    "embed"
     "encoding/json"
     "fmt"
     "net/mail"
@@ -19,12 +18,20 @@ import (
     "github.com/pulumi/pulumi-go-provider/infer"
     "github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+    sharedassets "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/assets"
 )
 
-//go:embed assets/index.mjs
-var authorizerIndexMjs string
-// Ensure the embed import is considered used by tools that don't honor //go:embed during analysis.
-var _ embed.FS
+var authorizerIndexMjs = sharedassets.GetAuthorizerIndexMjs()
+
+// NewProvider exposes construction to allow early sanity checks on embedded assets.
+func NewProvider() (p.Provider, error) {
+    if strings.TrimSpace(authorizerIndexMjs) == "" {
+        return nil, fmt.Errorf("embedded authorizer lambda (index.mjs) not found; ensure CI populated providers/internal/assets/lambda/index.mjs before building the provider")
+    }
+    return infer.NewProviderBuilder().
+        WithComponents(infer.ComponentF(NewAuthorizerWithPolicyStore)).
+        Build()
+}
 
 // Note: The provider also includes a minimal Cognito trigger stub under
 // packages/provider/assets/cognito-trigger-stub.mjs for future use.

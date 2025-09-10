@@ -1,6 +1,6 @@
 # Terraform provider specification and Pulumi parity matrix (VP-19)
 
-Status: Draft for review
+Status: Accepted
 
 Date: 2025-09-10
 
@@ -15,19 +15,32 @@ This document defines the Terraform provider surface and feature set required to
   - Optional Cognito User Pool and Verified Permissions Identity Source
   - AVP schema/policy ingestion with validation and optional canaries
 - Match configuration inputs and outputs 1:1 with the Pulumi provider where feasible.
+- Reuse common Go provider logic across the Pulumi and Terraform providers to the greatest extent possible to ensure behavior parity.
 
 Non‑goals
 - Expose raw underlying AWS resources directly as separate Terraform resources (the AWS provider already covers those). This provider focuses on a cohesive authorizer component resource that implements opinionated wiring and AVP ingest/validation.
 
 ## Provider name and resource shape
 
-- Provider source (subject to ADR outcome): `namespace/vpauthorizer` or `namespace/verified-permissions-authorizer`.
-- Primary resource type: `vpauthorizer_authorizer` (name subject to final provider name; treat `vpauthorizer_*` as a placeholder prefix).
+- Provider source: `mikecbrant/vpauthorizer`.
+- Primary resource type: `vpauthorizer_authorizer`.
 - Data sources: none required for parity.
+
+## Transparency and exports
+
+To aid composability, the provider must be transparent about what it creates and expose key identifiers/ARNs as outputs from the high‑level resource. This does not contradict the non‑goal of exposing each raw AWS resource as its own Terraform resource; these are computed attributes on the component resource that enable downstream wiring.
+
+Exports include (non‑exhaustive, aligned with Pulumi outputs):
+- Verified Permissions: `policy_store_id`, `policy_store_arn`.
+- Lambda authorizer: `authorizer_function_arn`, `role_arn`.
+- DynamoDB: `auth_table_arn`, and `auth_table_stream_arn` when streams are enabled.
+- Cognito (when enabled): `user_pool_id`, `user_pool_arn`, `user_pool_client_ids`.
+- Verified Permissions identity source (when created): identity source id and ARN.
+- Additional computed values as needed by consumers (e.g., a `parameters` map mirroring Pulumi) without leaking implementation‑private details.
 
 ## Configuration schema (inputs) — 1:1 with Pulumi
 
-The Terraform resource inputs mirror `packages/provider/pkg/provider/provider.go` and `schema.go`.
+The Terraform resource inputs mirror the Pulumi provider’s schema definitions in this repository (see the Pulumi provider under the monorepo providers directory).
 
 Top‑level
 - `description` (string, optional)
@@ -50,11 +63,11 @@ Top‑level
   - `policy_dir` (string, optional; default `./authorizer/policies`)
   - `action_group_enforcement` (string, optional; `off|warn|error`; default `error`)
   - `disable_guardrails` (bool, optional; default `false`)
-  - `canary_file` (string, optional; default `./authorize/canaries.yaml` when file exists)
+  - `canary_file` (string, optional; default `./authorizer/canaries.yaml` when file exists)
 
-Validation rules (must match Pulumi provider behavior)
+Validation rules (should match Pulumi provider behavior where possible)
 - Verified Permissions schema file must be YAML/JSON; exactly one namespace; required principals: `Tenant`, `User`, `Role`, `GlobalRole`, `TenantGrant`.
-- Namespace naming: warn when not simple kebab‑case; not a hard error.
+- Namespace naming: hard error if the namespace does not meet Verified Permissions namespacing requirements.
 - Action group enforcement uses exact, case‑sensitive prefixes against the canonical set: `Create|Delete|Find|Get|Update|Batch*` and their `Global*` equivalents. Modes: `off|warn|error`.
 - Schema JSON size limit: error > 100,000 bytes; warn at ≥ 95% of limit.
 - `provisioned_concurrency` must be `<= reserved_concurrency` when set.
@@ -63,10 +76,8 @@ Validation rules (must match Pulumi provider behavior)
   - If identity is a domain, `from` must be an email within that domain; if identity is an email, `from` must match exactly.
   - Identity region must be compatible with the Cognito region (same region or the documented backwards‑compatible set); partitions must match.
 
-Environment variable support (fallback)
-- For convenience (especially CI), the provider will read the following environment variables when the corresponding input is unset:
-  - `VPAUTHORIZER_SCHEMA_FILE`, `VPAUTHORIZER_POLICY_DIR`, `VPAUTHORIZER_CANARY_FILE`, `VPAUTHORIZER_ACTION_GROUP_ENFORCEMENT`, `VPAUTHORIZER_DISABLE_GUARDRAILS`.
-  - Standard AWS credentials/region env vars are honored by the AWS SDK used by the provider.
+## Configuration interface
+- Configuration is supported only via Terraform resource arguments. No provider‑specific environment variable configuration is supported. Standard AWS SDK credential/region discovery remains unchanged and outside this provider.
 
 ## Outputs — 1:1 with Pulumi
 
@@ -106,6 +117,11 @@ Pulumi capability → Terraform resource behavior
 Known deviations/notes
 - The Terraform provider will directly call AWS APIs (Go SDK v2) to manage AWS resources within this single high‑level resource. Consumers should not manage the same underlying resources with the AWS provider to avoid drift. This mirrors the Pulumi component’s single‑owner model in spirit, but via Terraform’s provider resource model.
 - We will not expose additional knobs beyond the Pulumi surface in the initial release.
+
+## Intentional differences vs Pulumi
+
+- No environment variable fallback for Terraform resource arguments. Rationale: follow Terraform idioms and keep configuration declarative in HCL; AWS SDK environment discovery remains unchanged.
+- Namespace validation is a hard error when not compliant with Verified Permissions naming requirements (Pulumi may warn today). Rationale: fail early to prevent misconfigured policy stores.
 
 ## Documentation requirements (to publish)
 - Provider overview page: purpose, architecture diagram/flow, prerequisites.

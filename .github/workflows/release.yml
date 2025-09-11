@@ -46,10 +46,10 @@ jobs:
       - name: Unit tests (Node packages) with 100% coverage
         run: pnpm -r test
 
-      - name: Setup Go
+      - name: Setup Go (Pulumi provider)
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'packages/provider/go.mod'
+          go-version-file: 'providers/pulumi/go.mod'
 
       - name: Go vet (lint) provider
         run: pnpm go:lint
@@ -135,29 +135,24 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Build Lambda (to embed)
-        run: pnpm --filter verified-permissions-lambda-authorizer build
+      - name: Build Lambda artifact (reusable composite)
+        uses: ./.github/actions/build-lambda
 
-      - name: Copy built lambda into shared assets (for Pulumi and Terraform)
-        run: |
-          mkdir -p providers/internal/assets/lambda
-          cp packages/lambda-authorizer/dist/index.mjs providers/internal/assets/lambda/index.mjs
-
-      - name: Setup Go
+      - name: Setup Go (Pulumi provider)
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'packages/provider/go.mod'
+          go-version-file: 'providers/pulumi/go.mod'
 
       - name: Build provider plugin
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          cd packages/provider/cmd/pulumi-resource-verified-permissions-authorizer
+          cd providers/pulumi/cmd/pulumi-resource-verified-permissions-authorizer
           go build -ldflags "-s -w" -o pulumi-resource-verified-permissions-authorizer
           cd -
           # Package
-          BIN=packages/provider/cmd/pulumi-resource-verified-permissions-authorizer/pulumi-resource-verified-permissions-authorizer
+          BIN=providers/pulumi/cmd/pulumi-resource-verified-permissions-authorizer/pulumi-resource-verified-permissions-authorizer
           if [ "${{ matrix.goos }}" = "windows" ]; then
             mv "$BIN" "${BIN}.exe"
             BIN="${BIN}.exe"
@@ -185,8 +180,8 @@ jobs:
           # Ensure provider/schema.json version matches the SDK version just published
           ver=${{ needs.version_or_publish.outputs.provider_version }}
           tmp=$(mktemp)
-          jq ".version = \"$ver\"" packages/provider/schema.json > "$tmp" && mv "$tmp" packages/provider/schema.json
-          npx pulumi@latest package publish packages/provider/schema.json --readme packages/provider/README.md
+          jq ".version = \"$ver\"" providers/pulumi/schema.json > "$tmp" && mv "$tmp" providers/pulumi/schema.json
+          npx pulumi@latest package publish providers/pulumi/schema.json --readme providers/pulumi/README.md
 
   build_and_publish_tf_provider:
     name: Build and Publish Terraform Provider
@@ -228,13 +223,8 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Build Lambda (to embed)
-        run: pnpm --filter verified-permissions-lambda-authorizer build
-
-      - name: Copy built lambda into shared assets
-        run: |
-          mkdir -p providers/internal/assets/lambda
-          cp packages/lambda-authorizer/dist/index.mjs providers/internal/assets/lambda/index.mjs
+      - name: Build Lambda artifact (reusable composite)
+        uses: ./.github/actions/build-lambda
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -245,23 +235,23 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ needs.version_or_publish.outputs.provider_version }}
+          OS: ${{ matrix.goos }}
+          ARCH: ${{ matrix.goarch }}
         run: |
           cd providers/terraform/cmd/terraform-provider-vpauthorizer
-          go build -ldflags "-s -w -X main.version=${{ needs.version_or_publish.outputs.provider_version }}" -o terraform-provider-vpauthorizer
+          go build -ldflags "-s -w -X main.version=$VERSION" -o terraform-provider-vpauthorizer
           cd -
           BIN_DIR=providers/terraform/cmd/terraform-provider-vpauthorizer
           BIN=${BIN_DIR}/terraform-provider-vpauthorizer
-          VER=${{ needs.version_or_publish.outputs.provider_version }}
-          RENAMED=${BIN_DIR}/terraform-provider-vpauthorizer_v${VER}
-          if [ "${{ matrix.goos }}" = "windows" ]; then
+          RENAMED=${BIN_DIR}/terraform-provider-vpauthorizer_v${VERSION}
+          if [ "$OS" = "windows" ]; then
             mv "$BIN" "${BIN}.exe"
             BIN="${BIN}.exe"
             RENAMED="${RENAMED}.exe"
           fi
           mv "$BIN" "$RENAMED"
-          OS=${{ matrix.goos }}
-          ARCH=${{ matrix.goarch }}
-          ZIP=terraform-provider-vpauthorizer_${VER}_${OS}_${ARCH}.zip
+          ZIP=terraform-provider-vpauthorizer_${VERSION}_${OS}_${ARCH}.zip
           (cd "$BIN_DIR" && zip -9 ../../../../$ZIP $(basename "$RENAMED"))
       - name: Upload TF artifact
         uses: actions/upload-artifact@v4

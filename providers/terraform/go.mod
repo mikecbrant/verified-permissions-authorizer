@@ -12,7 +12,9 @@ require (
     github.com/aws/aws-sdk-go-v2/service/dynamodb v1.37.1
     github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.54.0
     github.com/aws/aws-sdk-go-v2/service/verifiedpermissions v1.14.1
-    github.com/mikecbrant/verified-permissions-authorizer/providers/internal v0.0.0
+    github.com/mikecbrant/verified-permissions-authorizer/providers/common v0.0.0
+    github.com/mikecbrant/verified-permissions-authorizer/providers/assets v0.0.0
 )
 
-replace github.com/mikecbrant/verified-permissions-authorizer/providers/internal => ../internal
+replace github.com/mikecbrant/verified-permissions-authorizer/providers/common => ../common
+replace github.com/mikecbrant/verified-permissions-authorizer/providers/assets => ../assets

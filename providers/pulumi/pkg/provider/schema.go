@@ -9,7 +9,7 @@ import (
 
     awsvp "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/verifiedpermissions"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-    sharedavp "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/avp"
+    sharedavp "github.com/mikecbrant/verified-permissions-authorizer/providers/common/avp"
 )
 
 // VerifiedPermissionsConfig configures where the provider should find the AVP schema (YAML or JSON)
@@ -19,6 +19,8 @@ type VerifiedPermissionsConfig struct {
     SchemaFile *string `pulumi:"schemaFile,optional"`
     // Directory containing .cedar policy files (recursively discovered).
     PolicyDir *string `pulumi:"policyDir,optional"`
+    // Optional explicit namespace to use for the AVP schema; when set, this overrides the namespace key in the schema file.
+    Namespace *string `pulumi:"namespace,optional"`
     // Enforce use of action groups for all policies: off|warn|error (default: error).
     ActionGroupEnforcement *string `pulumi:"actionGroupEnforcement,optional"`
     // Disable installing provider-managed guardrail deny policies (default: false; a warning is emitted when true).
@@ -52,7 +54,8 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
     }
 
     // Read and parse schema (YAML or JSON → JSON string)
-    cedarJSON, ns, actions, warns, err := sharedavp.LoadAndValidateSchema(schemaPath)
+    overrideNs := strings.TrimSpace(valueOrDefault(cfg.Namespace, ""))
+    cedarJSON, ns, actions, warns, err := sharedavp.LoadAndValidateSchemaWithNamespace(schemaPath, overrideNs)
     if err != nil {
         return err
     }

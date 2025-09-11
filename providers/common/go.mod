@@ -1,4 +1,4 @@
-module github.com/mikecbrant/verified-permissions-authorizer/providers/internal
+module github.com/mikecbrant/verified-permissions-authorizer/providers/common
 
 go 1.24
 

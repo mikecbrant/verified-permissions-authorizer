@@ -12,92 +12,117 @@ import (
 
     vpapi "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
     vpapiTypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
-    "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/awsutil"
-    "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/util"
+    "github.com/mikecbrant/verified-permissions-authorizer/providers/common/awsutil"
+    "github.com/mikecbrant/verified-permissions-authorizer/providers/common/util"
     "gopkg.in/yaml.v3"
 )
 
 // LoadAndValidateSchema parses a YAML/JSON Verified Permissions schema definition and returns
 // canonical JSON (minified), the namespace name, the set of action names, and any warnings.
 func LoadAndValidateSchema(schemaPath string) (cedarJSON string, namespace string, actions []string, warnings []string, err error) {
+    return LoadAndValidateSchemaWithNamespace(schemaPath, "")
+}
+
+// LoadAndValidateSchemaWithNamespace is like LoadAndValidateSchema but allows the caller to override
+// the namespace (top-level key) with a provided value. When override is non-empty it must pass strict
+// namespace validation, otherwise an error is returned.
+func LoadAndValidateSchemaWithNamespace(schemaPath string, overrideNamespace string) (cedarJSON string, namespace string, actions []string, warnings []string, err error) {
+    top, ns, warns, err := loadSchemaDocument(schemaPath)
+    warnings = append(warnings, warns...)
+    if err != nil { return "", "", nil, warnings, err }
+    if overrideNamespace != "" {
+        if err := validateNamespaceStrict(overrideNamespace); err != nil {
+            return "", "", nil, warnings, err
+        }
+        // Replace top-level key with override
+        var body any
+        for _, v := range top { body = v; break }
+        top = map[string]any{overrideNamespace: body}
+        ns = overrideNamespace
+    }
+    // Validate required principals and collect actions
+    body := top[ns]
+    bmap, ok := body.(map[string]any)
+    if !ok { return "", "", nil, warnings, fmt.Errorf("schema namespace %q must map to an object", ns) }
+    if err := validateRequiredPrincipals(ns, bmap); err != nil { return "", "", nil, warnings, err }
+    acts := collectActionNames(bmap)
+    // Encode canonical JSON and enforce size limit
+    cj, err := canonicalize(top)
+    if err != nil { return "", "", nil, warnings, err }
+    return cj, ns, acts, warnings, nil
+}
+
+func loadSchemaDocument(schemaPath string) (map[string]any, string, []string, error) {
     raw, err := os.ReadFile(schemaPath)
     if err != nil {
-        return "", "", nil, nil, fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
+        return nil, "", nil, fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
     }
     var doc any
     switch strings.ToLower(filepath.Ext(schemaPath)) {
     case ".yaml", ".yml":
         if err := yaml.Unmarshal(raw, &doc); err != nil {
-            return "", "", nil, nil, fmt.Errorf("invalid YAML in %s: %w", schemaPath, err)
+            return nil, "", nil, fmt.Errorf("invalid YAML in %s: %w", schemaPath, err)
         }
     case ".json":
         if err := json.Unmarshal(raw, &doc); err != nil {
-            return "", "", nil, nil, fmt.Errorf("invalid JSON in %s: %w", schemaPath, err)
+            return nil, "", nil, fmt.Errorf("invalid JSON in %s: %w", schemaPath, err)
         }
     default:
-        return "", "", nil, nil, fmt.Errorf("unsupported schema extension %q; expected .yaml, .yml, or .json", filepath.Ext(schemaPath))
+        return nil, "", nil, fmt.Errorf("unsupported schema extension %q; expected .yaml, .yml, or .json", filepath.Ext(schemaPath))
     }
-    // Expect single namespace object
     top, ok := doc.(map[string]any)
     if !ok {
-        return "", "", nil, nil, fmt.Errorf("schema must be a mapping of namespace → {entityTypes, actions}")
+        return nil, "", nil, fmt.Errorf("schema must be a mapping of namespace → {entityTypes, actions}")
     }
     if len(top) != 1 {
-        return "", "", nil, nil, fmt.Errorf("AVP supports a single namespace per schema; found %d namespaces", len(top))
+        return nil, "", nil, fmt.Errorf("AVP supports a single namespace per schema; found %d namespaces", len(top))
     }
     var ns string
-    var body any
-    for k, v := range top {
-        ns = k
-        body = v
-        break
-    }
-    // Namespace warning for non-kebab-case (warning only; provider may elevate this to error)
+    for k := range top { ns = k; break }
+    // Soft warning when namespace isn't kebab-case; providers may elevate to error
+    warns := []string{}
     re := regexp.MustCompile(`^[a-z0-9][a-z0-9-]+$`)
     if !re.MatchString(ns) {
-        warnings = append(warnings, fmt.Sprintf("namespace %q is non-standard; consider simple kebab-case", ns))
+        warns = append(warns, fmt.Sprintf("namespace %q is non-standard; consider simple kebab-case", ns))
     }
-    // Required principals
-    bmap, ok := body.(map[string]any)
-    if !ok {
-        return "", "", nil, nil, fmt.Errorf("schema namespace %q must map to an object", ns)
+    return top, ns, warns, nil
+}
+
+func validateNamespaceStrict(ns string) error {
+    re := regexp.MustCompile(`^[a-z0-9][a-z0-9-]+$`)
+    if !re.MatchString(ns) {
+        return fmt.Errorf("invalid namespace %q: must match ^[a-z0-9][a-z0-9-]+$", ns)
     }
+    return nil
+}
+
+func validateRequiredPrincipals(ns string, bmap map[string]any) error {
     etRaw, ok := bmap["entityTypes"]
-    if !ok {
-        return "", "", nil, nil, fmt.Errorf("schema namespace %q must define entityTypes", ns)
-    }
+    if !ok { return fmt.Errorf("schema namespace %q must define entityTypes", ns) }
     et, ok := etRaw.(map[string]any)
-    if !ok {
-        return "", "", nil, nil, fmt.Errorf("entityTypes must be an object of entity type definitions")
-    }
+    if !ok { return fmt.Errorf("entityTypes must be an object of entity type definitions") }
     requiredPrincipals := []string{"Tenant", "User", "Role", "GlobalRole", "TenantGrant"}
     missing := []string{}
-    for _, r := range requiredPrincipals {
-        if _, ok := et[r]; !ok {
-            missing = append(missing, r)
-        }
-    }
-    if len(missing) > 0 {
-        return "", "", nil, nil, fmt.Errorf("schema namespace %q missing required principal entity types: %s", ns, strings.Join(missing, ", "))
-    }
-    // Collect action names
+    for _, r := range requiredPrincipals { if _, ok := et[r]; !ok { missing = append(missing, r) } }
+    if len(missing) > 0 { return fmt.Errorf("schema namespace %q missing required principal entity types: %s", ns, strings.Join(missing, ", ")) }
+    return nil
+}
+
+func collectActionNames(bmap map[string]any) []string {
     acts := []string{}
     if aRaw, ok := bmap["actions"]; ok {
         if amap, ok := aRaw.(map[string]any); ok {
-            for name := range amap {
-                acts = append(acts, name)
-            }
+            for name := range amap { acts = append(acts, name) }
         }
     }
-    // Canonical JSON
+    return acts
+}
+
+func canonicalize(top map[string]any) (string, error) {
     b, err := json.Marshal(top)
-    if err != nil {
-        return "", "", nil, nil, fmt.Errorf("failed to encode schema as JSON: %w", err)
-    }
-    if sz := len(b); sz > 100000 {
-        return "", "", nil, nil, fmt.Errorf("schema JSON size %d exceeds 100,000 byte limit", sz)
-    }
-    return string(b), ns, acts, warnings, nil
+    if err != nil { return "", fmt.Errorf("failed to encode schema as JSON: %w", err) }
+    if sz := len(b); sz > 100000 { return "", fmt.Errorf("schema JSON size %d exceeds 100,000 byte limit", sz) }
+    return string(b), nil
 }
 
 // Canonical action group identifiers (PascalCase + Global* variants)

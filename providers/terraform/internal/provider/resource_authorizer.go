@@ -26,8 +26,9 @@ import (
     lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
     "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
     vptypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
-    sharedassets "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/assets"
-    sharedavp "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/avp"
+    sharedassets "github.com/mikecbrant/verified-permissions-authorizer/providers/assets"
+    sharedavp "github.com/mikecbrant/verified-permissions-authorizer/providers/common/avp"
+    sharedutil "github.com/mikecbrant/verified-permissions-authorizer/providers/common/util"
     "github.com/hashicorp/terraform-plugin-framework/path"
 )
 
@@ -51,6 +52,7 @@ type authorizerModel struct {
     PolicyStoreId  types.String `tfsdk:"policy_store_id"`
     PolicyStoreArn types.String `tfsdk:"policy_store_arn"`
     Parameters     types.Map    `tfsdk:"parameters"`
+    Namespace      types.String `tfsdk:"namespace"`
 
     // Grouped outputs
     LambdaAuthorizerArn types.String `tfsdk:"lambda_authorizer_arn"`
@@ -77,6 +79,7 @@ func (r *authorizerResource) Schema(_ context.Context, _ resource.SchemaRequest,
             "policy_store_id": schema.StringAttribute{Computed: true},
             "policy_store_arn": schema.StringAttribute{Computed: true},
             "parameters": schema.MapAttribute{Computed: true, ElementType: types.StringType},
+            "namespace": schema.StringAttribute{Computed: true},
             "lambda_authorizer_arn": schema.StringAttribute{Computed: true},
             "lambda_role_arn": schema.StringAttribute{Computed: true},
             "dynamo_table_arn": schema.StringAttribute{Computed: true},
@@ -122,6 +125,7 @@ func (r *authorizerResource) Schema(_ context.Context, _ resource.SchemaRequest,
                 Attributes: map[string]schema.Attribute{
                     "schema_file": schema.StringAttribute{Optional: true},
                     "policy_dir": schema.StringAttribute{Optional: true},
+                    "namespace": schema.StringAttribute{Optional: true},
                     "action_group_enforcement": schema.StringAttribute{Optional: true},
                     "disable_guardrails": schema.BoolAttribute{Optional: true},
                     "canary_file": schema.StringAttribute{Optional: true},
@@ -170,17 +174,17 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
         TableName: &tableName,
         BillingMode: dynamodbtypes.BillingModePayPerRequest,
         AttributeDefinitions: []dynamodbtypes.AttributeDefinition{
-            {AttributeName: awsString("PK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
-            {AttributeName: awsString("SK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
-            {AttributeName: awsString("GSI1PK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
-            {AttributeName: awsString("GSI1SK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
-            {AttributeName: awsString("GSI2PK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
-            {AttributeName: awsString("GSI2SK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
+            {AttributeName: sharedutil.StrPtr("PK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
+            {AttributeName: sharedutil.StrPtr("SK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
+            {AttributeName: sharedutil.StrPtr("GSI1PK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
+            {AttributeName: sharedutil.StrPtr("GSI1SK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
+            {AttributeName: sharedutil.StrPtr("GSI2PK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
+            {AttributeName: sharedutil.StrPtr("GSI2SK"), AttributeType: dynamodbtypes.ScalarAttributeTypeS},
         },
-        KeySchema: []dynamodbtypes.KeySchemaElement{{AttributeName: awsString("PK"), KeyType: dynamodbtypes.KeyTypeHash}, {AttributeName: awsString("SK"), KeyType: dynamodbtypes.KeyTypeRange}},
+        KeySchema: []dynamodbtypes.KeySchemaElement{{AttributeName: sharedutil.StrPtr("PK"), KeyType: dynamodbtypes.KeyTypeHash}, {AttributeName: sharedutil.StrPtr("SK"), KeyType: dynamodbtypes.KeyTypeRange}},
         GlobalSecondaryIndexes: []dynamodbtypes.GlobalSecondaryIndex{
-            {IndexName: awsString("GSI1"), KeySchema: []dynamodbtypes.KeySchemaElement{{AttributeName: awsString("GSI1PK"), KeyType: dynamodbtypes.KeyTypeHash}, {AttributeName: awsString("GSI1SK"), KeyType: dynamodbtypes.KeyTypeRange}}, Projection: &dynamodbtypes.Projection{ProjectionType: dynamodbtypes.ProjectionTypeAll}},
-            {IndexName: awsString("GSI2"), KeySchema: []dynamodbtypes.KeySchemaElement{{AttributeName: awsString("GSI2PK"), KeyType: dynamodbtypes.KeyTypeHash}, {AttributeName: awsString("GSI2SK"), KeyType: dynamodbtypes.KeyTypeRange}}, Projection: &dynamodbtypes.Projection{ProjectionType: dynamodbtypes.ProjectionTypeAll}},
+            {IndexName: sharedutil.StrPtr("GSI1"), KeySchema: []dynamodbtypes.KeySchemaElement{{AttributeName: sharedutil.StrPtr("GSI1PK"), KeyType: dynamodbtypes.KeyTypeHash}, {AttributeName: sharedutil.StrPtr("GSI1SK"), KeyType: dynamodbtypes.KeyTypeRange}}, Projection: &dynamodbtypes.Projection{ProjectionType: dynamodbtypes.ProjectionTypeAll}},
+            {IndexName: sharedutil.StrPtr("GSI2"), KeySchema: []dynamodbtypes.KeySchemaElement{{AttributeName: sharedutil.StrPtr("GSI2PK"), KeyType: dynamodbtypes.KeyTypeHash}, {AttributeName: sharedutil.StrPtr("GSI2SK"), KeyType: dynamodbtypes.KeyTypeRange}}, Projection: &dynamodbtypes.Projection{ProjectionType: dynamodbtypes.ProjectionTypeAll}},
         },
     })
     if err != nil { resp.Diagnostics.AddError("Create DynamoDB table failed", err.Error()); return }
@@ -188,12 +192,12 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
     // 3) IAM role
     iamc := iam.NewFromConfig(cfg)
     assume := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":["lambda.amazonaws.com"]},"Action":["sts:AssumeRole"]}]}`
-    roleOut, err := iamc.CreateRole(ctx, &iam.CreateRoleInput{AssumeRolePolicyDocument: &assume, RoleName: awsString(fmt.Sprintf("vpa-role-%d", time.Now().Unix()))})
+    roleOut, err := iamc.CreateRole(ctx, &iam.CreateRoleInput{AssumeRolePolicyDocument: &assume, RoleName: sharedutil.StrPtr(fmt.Sprintf("vpa-role-%d", time.Now().Unix()))})
     if err != nil { resp.Diagnostics.AddError("Create IAM role failed", err.Error()); return }
     roleArn := *roleOut.Role.Arn
 
     // Attach basic execution role
-    _, _ = iamc.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{RoleName: roleOut.Role.RoleName, PolicyArn: awsString("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")})
+    _, _ = iamc.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{RoleName: roleOut.Role.RoleName, PolicyArn: sharedutil.StrPtr("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")})
 
     // 4) Lambda function from embedded JS
     zbuf := new(bytes.Buffer)
@@ -209,11 +213,11 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
         FunctionName: &fnName,
         Role:         &roleArn,
         Runtime:      lambdatypes.RuntimeNodejs22x,
-        Handler:      awsString("index.handler"),
+        Handler:      sharedutil.StrPtr("index.handler"),
         Code:         &lambdatypes.FunctionCode{ZipFile: zbuf.Bytes()},
         Architectures: []lambdatypes.Architecture{lambdatypes.ArchitectureArm64},
-        Timeout:      awsInt32(10),
-        MemorySize:   awsInt32(int32(mem)),
+        Timeout:      sharedutil.Int32Ptr(10),
+        MemorySize:   sharedutil.Int32Ptr(int32(mem)),
         Publish:      &publish,
         Environment:  &lambdatypes.Environment{Variables: map[string]string{"POLICY_STORE_ID": psId}},
     })
@@ -226,19 +230,20 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
     if plan.VerifiedPermissions != nil {
         schemaPath := strings.TrimSpace(defaultStr(plan.VerifiedPermissions.SchemaFile, "./authorizer/schema.yaml"))
         policyDir := strings.TrimSpace(defaultStr(plan.VerifiedPermissions.PolicyDir, "./authorizer/policies"))
-        cedarJSON, ns, actions, _, err := sharedavp.LoadAndValidateSchema(absPath(schemaPath))
+        nsOverride := strings.TrimSpace(defaultStr(plan.VerifiedPermissions.Namespace, ""))
+        cedarJSON, ns, actions, _, err := sharedavp.LoadAndValidateSchemaWithNamespace(sharedutil.AbsPath(schemaPath), nsOverride)
         if err != nil { resp.Diagnostics.AddError("Schema validation failed", err.Error()); return }
         mode := strings.ToLower(defaultStr(plan.VerifiedPermissions.ActionGroupEnforcement, "error"))
         if _, err := sharedavp.EnforceActionGroups(actions, mode); err != nil { resp.Diagnostics.AddError("Action group enforcement", err.Error()); return }
         if err := sharedavp.PutSchemaIfChanged(ctx, psId, cedarJSON, region); err != nil { resp.Diagnostics.AddError("Put schema failed", err.Error()); return }
-        files, err := sharedavp.CollectPolicyFiles(absPath(policyDir))
+        files, err := sharedavp.CollectPolicyFiles(sharedutil.AbsPath(policyDir))
         if err != nil { resp.Diagnostics.AddError("Collect policies failed", err.Error()); return }
         for i, p := range files {
             b, err := os.ReadFile(p)
             if err != nil { resp.Diagnostics.AddError("Read policy failed", err.Error()); return }
             _, err = vp.CreatePolicy(ctx, &verifiedpermissions.CreatePolicyInput{
                 PolicyStoreId: &psId,
-                Definition: &vptypes.PolicyDefinition{Static: &vptypes.StaticPolicyDefinition{Statement: awsString(string(b))}},
+                Definition: &vptypes.PolicyDefinition{Static: &vptypes.StaticPolicyDefinition{Statement: sharedutil.StrPtr(string(b))}},
             })
             if err != nil { resp.Diagnostics.AddError("CreatePolicy failed", fmt.Sprintf("file %s: %v", p, err)); return }
         }
@@ -249,11 +254,11 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
             if _, err := os.Stat(def); err == nil { canaryFile = def }
         }
         if canaryFile != "" {
-            if err := sharedavp.RunCombinedCanaries(ctx, region, psId, absPath(canaryFile), mode); err != nil {
+            if err := sharedavp.RunCombinedCanaries(ctx, region, psId, sharedutil.AbsPath(canaryFile), mode); err != nil {
                 resp.Diagnostics.AddError("Canaries failed", err.Error()); return
             }
         }
-        _ = ns
+        plan.Namespace = types.StringValue(ns)
     }
 
     // Outputs
@@ -294,7 +299,7 @@ func (r *authorizerResource) Delete(ctx context.Context, req resource.DeleteRequ
     cfg, err := awscfg.LoadDefaultConfig(ctx)
     if err != nil { resp.Diagnostics.AddError("AWS config error", err.Error()); return }
     vp := verifiedpermissions.NewFromConfig(cfg)
-    _, _ = vp.DeletePolicyStore(ctx, &verifiedpermissions.DeletePolicyStoreInput{PolicyStoreId: strPtr(state.PolicyStoreId.ValueString())})
+    _, _ = vp.DeletePolicyStore(ctx, &verifiedpermissions.DeletePolicyStoreInput{PolicyStoreId: sharedutil.StrPtr(state.PolicyStoreId.ValueString())})
     lamb := lambda.NewFromConfig(cfg)
     if !state.LambdaAuthorizerArn.IsNull() {
         // Name is last segment of ARN
@@ -310,8 +315,4 @@ func (r *authorizerResource) ImportState(ctx context.Context, req resource.Impor
 }
 
 // Helpers
-func awsString(s string) *string { return &s }
-func awsInt32(v int32) *int32 { return &v }
-func strPtr(s string) *string { return &s }
 func defaultStr(v types.String, def string) string { if v.IsNull() || v.ValueString() == "" { return def } ; return v.ValueString() }
-func absPath(p string) string { if filepath.IsAbs(p) { return p }; cwd, _ := os.Getwd(); return filepath.Join(cwd, p) }

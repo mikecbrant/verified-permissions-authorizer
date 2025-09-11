@@ -4,13 +4,12 @@ import (
     "context"
     "embed"
     "fmt"
-    "os"
     "strings"
 
     vpapi "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
     vpapiTypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
-    "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/awsutil"
-    "gopkg.in/yaml.v3"
+    "github.com/mikecbrant/verified-permissions-authorizer/providers/common/awsutil"
+    sharedutil "github.com/mikecbrant/verified-permissions-authorizer/providers/common/util"
 )
 
 //go:embed assets/canaries/*.yaml
@@ -21,6 +20,7 @@ type yamlCase struct {
     Action    string            `yaml:"action"`
     Resource  map[string]string `yaml:"resource"`
     Expect    string            `yaml:"expect"`
+    Context   map[string]any    `yaml:"context"`
 }
 type canaryDoc struct {
     Cases []yamlCase `yaml:"cases"`
@@ -43,6 +43,7 @@ func RunCombinedCanaries(ctx context.Context, region string, policyStoreId strin
         ResourceType  string
         ResourceId    string
         Expect        string
+        Context       map[string]any
     }
     toCase := func(c yamlCase) canaryCase {
         return canaryCase{
@@ -52,58 +53,76 @@ func RunCombinedCanaries(ctx context.Context, region string, policyStoreId strin
             ResourceType:  c.Resource["entityType"],
             ResourceId:    c.Resource["entityId"],
             Expect:        c.Expect,
+            Context:       c.Context,
         }
     }
 
     var allCases []canaryCase
-    if b, err := os.ReadFile(consumerPath); err == nil {
+    if consumerPath != "" {
         var doc canaryDoc
-        if err := yaml.Unmarshal(b, &doc); err != nil {
+        if err := sharedutil.ReadYAML(consumerPath, &doc); err != nil {
             return fmt.Errorf("invalid canary YAML %s: %w", consumerPath, err)
         }
-        for _, c := range doc.Cases {
-            allCases = append(allCases, toCase(c))
-        }
+        for _, c := range doc.Cases { allCases = append(allCases, toCase(c)) }
     }
-    if b, err := canaryFS.ReadFile("assets/canaries/base-deny.yaml"); err == nil {
+    {
         var doc canaryDoc
-        if err := yaml.Unmarshal(b, &doc); err == nil {
-            for _, c := range doc.Cases {
-                allCases = append(allCases, toCase(c))
-            }
+        if err := sharedutil.ReadYAMLFromFS(canaryFS, "assets/canaries/base-deny.yaml", &doc); err == nil {
+            for _, c := range doc.Cases { allCases = append(allCases, toCase(c)) }
         }
     }
     if !strings.EqualFold(agMode, "off") {
-        if b, err := canaryFS.ReadFile("assets/canaries/action-enforcement.yaml"); err == nil {
-            var doc canaryDoc
-            if err := yaml.Unmarshal(b, &doc); err == nil {
-                for _, c := range doc.Cases {
-                    allCases = append(allCases, toCase(c))
-                }
-            }
+        var doc canaryDoc
+        if err := sharedutil.ReadYAMLFromFS(canaryFS, "assets/canaries/action-enforcement.yaml", &doc); err == nil {
+            for _, c := range doc.Cases { allCases = append(allCases, toCase(c)) }
         }
     }
     if len(allCases) == 0 {
         return nil
     }
+    var failures []string
     for i, c := range allCases {
         p := vpapiTypes.EntityIdentifier{EntityType: &c.PrincipalType, EntityId: &c.PrincipalId}
         r := vpapiTypes.EntityIdentifier{EntityType: &c.ResourceType, EntityId: &c.ResourceId}
         act := c.Action
         actionType := "Action"
-        out, err := client.IsAuthorized(ctx, &vpapi.IsAuthorizedInput{
+        in := &vpapi.IsAuthorizedInput{
             PolicyStoreId: &policyStoreId,
             Principal:     &p,
             Resource:      &r,
             Action:        &vpapiTypes.ActionIdentifier{ActionType: &actionType, ActionId: &act},
-        })
+        }
+        if len(c.Context) > 0 {
+            cm := map[string]vpapiTypes.AttributeValue{}
+            for k, v := range c.Context {
+                switch t := v.(type) {
+                case bool:
+                    cm[k] = vpapiTypes.AttributeValue{Boolean: &t}
+                case int:
+                    vv := int64(t); cm[k] = vpapiTypes.AttributeValue{Long: &vv}
+                case int64:
+                    vv := t; cm[k] = vpapiTypes.AttributeValue{Long: &vv}
+                case string:
+                    cm[k] = vpapiTypes.AttributeValue{String: &t}
+                default:
+                    s := fmt.Sprint(v); cm[k] = vpapiTypes.AttributeValue{String: &s}
+                }
+            }
+            in.Context = &vpapiTypes.ContextDefinition{ContextMap: cm}
+        }
+        out, err := client.IsAuthorized(ctx, in)
         if err != nil {
-            return fmt.Errorf("canary #%d failed to execute: %w", i+1, err)
+            failures = append(failures, fmt.Sprintf("%d: API error: %v", i+1, err))
+            continue
         }
-        got := string(out.Decision)
+        got := "DENY"
+        if out.Decision == vpapiTypes.DecisionAllow { got = "ALLOW" }
         if !strings.EqualFold(got, c.Expect) {
-            return fmt.Errorf("canary #%d unexpected decision: got %s, want %s (principal=%s:%s, action=%s, resource=%s:%s)", i+1, got, c.Expect, c.PrincipalType, c.PrincipalId, c.Action, c.ResourceType, c.ResourceId)
+            failures = append(failures, fmt.Sprintf("%d: expected %s, got %s (principal=%s:%s, action=%s, resource=%s:%s)", i+1, c.Expect, got, c.PrincipalType, c.PrincipalId, c.Action, c.ResourceType, c.ResourceId))
         }
+    }
+    if len(failures) > 0 {
+        return fmt.Errorf("canaries failed (%d/%d): %s", len(failures), len(allCases), strings.Join(failures, "; "))
     }
     return nil
 }

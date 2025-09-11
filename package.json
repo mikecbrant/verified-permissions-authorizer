@@ -13,10 +13,10 @@
     "changeset": "changeset",
     "release": "changeset version && pnpm -r build",
     "test": "pnpm -r test && pnpm go:test",
-    "validate:avp": "npx -y avp-validate --schema infra/authorizer/schema.yaml --policyDir infra/authorizer/policies --mode error",
-    "go:lint": "bash -lc 'cd packages/provider && go mod tidy && go vet ./...'",
-    "go:test": "bash -lc \"if command -v go >/dev/null 2>&1; then cd packages/provider && go mod tidy && go test ./... -coverprofile=coverage.out -covermode=count; else echo '[skip] go not installed; skipping provider tests locally'; fi\"",
-    "format:go": "bash -lc 'gofmt -s -w packages/provider'"
+    "validate:avp": "npx -y avp-validate --schema infra/shared/schema.yaml --policyDir infra/shared/policies --mode error",
+    "go:lint": "bash -lc 'cd providers/pulumi && go mod tidy && go vet ./... && cd ../../providers/terraform && go mod tidy && go vet ./... && cd ../../providers/common && go mod tidy && go vet ./... && cd ../../providers/assets && go mod tidy && go vet ./...'",
+    "go:test": "bash -lc \"if command -v go >/dev/null 2>&1; then cd providers/pulumi && go mod tidy && go test ./... -coverprofile=coverage.out -covermode=count && cd ../../providers/terraform && go mod tidy && go test ./... -coverprofile=coverage.tf.out -covermode=count && cd ../../providers/common && go mod tidy && go test ./... -coverprofile=coverage.common.out -covermode=count; else echo '[skip] go not installed; skipping provider tests locally'; fi\"",
+    "format:go": "bash -lc 'gofmt -s -w providers/pulumi providers/common providers/terraform providers/assets'"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.8",

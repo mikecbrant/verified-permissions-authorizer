@@ -1,8 +1,8 @@
 package provider
 
 import (
-    sharedidentity "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/identity"
-    sharedaws "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/awsutil"
+    sharedidentity "github.com/mikecbrant/verified-permissions-authorizer/providers/common/identity"
+    sharedaws "github.com/mikecbrant/verified-permissions-authorizer/providers/common/awsutil"
 )
 
 // CognitoSesConfig describes optional SES settings to configure Cognito User Pool email sending.

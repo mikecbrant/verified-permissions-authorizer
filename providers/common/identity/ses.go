@@ -6,7 +6,7 @@ import (
     "regexp"
     "strings"
 
-    "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/awsutil"
+    "github.com/mikecbrant/verified-permissions-authorizer/providers/common/awsutil"
 )
 
 var sesIdentityArnRe = regexp.MustCompile(`^arn:(aws|aws-us-gov|aws-cn):ses:([a-z0-9-]+):([0-9]{12}):identity\/(.+)$`)

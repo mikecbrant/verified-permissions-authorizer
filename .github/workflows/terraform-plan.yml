@@ -10,7 +10,9 @@ permissions:
 
 env:
   TF_IN_AUTOMATION: "true"
-  TF_WORKING_DIR: providers/terraform/examples/basic
+  TF_WORKING_DIR: infra/terraform
+  TFC_ORG: ${{ vars.TFC_ORG || 'mikecbrant' }}
+  TFC_WORKSPACE: ${{ vars.TFC_WORKSPACE || 'vp-authorizer' }}
 
 jobs:
   plan:
@@ -19,9 +21,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Optional: Authenticate to HCP via GitHub OIDC. This does not provide AWS creds;
-      # AWS access occurs inside Terraform Cloud via the workspace variable set
-      # (TFC_AWS_PROVIDER_AUTH + TFC_AWS_RUN_ROLE_ARN).
+      # Optional: Authenticate to HCP via GitHub OIDC. Today this action does not mint a Terraform Cloud
+      # CLI token; we still pass TF_API_TOKEN below. Leaving this step to enable future OIDC-only auth.
       - name: HCP auth (OIDC)
         id: hcp-auth
         uses: hashicorp/hcp-auth-action@v0

@@ -107,7 +107,7 @@ Rationale
 If organizational requirements dictate private distribution later, Option B (Private Registry in HCP Terraform) is the preferred private path due to low friction and built‑in docs/UX. Options C/D remain viable for air‑gapped deployments.
 
 ## Build & Release implications (for Options A/B)
-- Repository layout: This Terraform provider will live in this monorepo under `providers/terraform`, alongside a Pulumi provider under `providers/pulumi`. Core provider logic will be factored into shared Go packages under `providers/internal` and reused by both providers; the `terraform` and `pulumi` subdirectories only map framework-specific inputs/outputs.
+- Repository layout: This Terraform provider will live in this monorepo under `providers/terraform`, alongside a Pulumi provider under `providers/pulumi`. Core provider logic will be factored into shared Go packages under `providers/common` and reused by both providers; the `terraform` and `pulumi` subdirectories only map framework-specific inputs/outputs.
 - Artifacts per release:
   - `terraform-provider-<name>_vX.Y.Z_<os>_<arch>.zip` for supported platforms (Linux/amd64, Linux/arm64, Darwin/amd64, Darwin/arm64, Windows/amd64 at minimum).
   - `SHA256SUMS` and a detached signature (e.g., `SHA256SUMS.sig`).
@@ -140,6 +140,11 @@ Failure handling
 ## Open questions
 1. Signing method and key management (GPG key identity, storage, and rotation).
 2. Minimum platform matrix beyond the baseline (Windows/arm64? FreeBSD?).
+3. Signing trade‑offs: While signatures increase supply‑chain trust, they introduce operational work:
+   - Secure generation and storage of the private key (CI secret management and rotation).
+   - Release failures when signatures or checksums are inconsistent (intentional, but adds toil).
+   - Contributor friction for local testing if signatures are required for private mirrors.
+   These costs are acceptable given the trust benefits; we will keep signing enabled.
 3. Documentation home: rely on registry‑rendered docs only, or also add a local `docs/terraform/*` folder in this repo and link from README.
 
 ## References

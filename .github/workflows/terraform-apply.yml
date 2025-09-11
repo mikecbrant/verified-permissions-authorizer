@@ -11,7 +11,9 @@ permissions:
 
 env:
   TF_IN_AUTOMATION: "true"
-  TF_WORKING_DIR: providers/terraform/examples/basic
+  TF_WORKING_DIR: infra/terraform
+  TFC_ORG: ${{ vars.TFC_ORG || 'mikecbrant' }}
+  TFC_WORKSPACE: ${{ vars.TFC_WORKSPACE || 'vp-authorizer' }}
 
 jobs:
   apply:

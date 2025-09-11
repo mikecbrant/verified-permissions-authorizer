@@ -9,10 +9,10 @@ import { AuthorizerWithPolicyStore } from "pulumi-verified-permissions-authorize
 const authz = new AuthorizerWithPolicyStore("authz", {
   description: "Example AVP stack",
   verifiedPermissions: {
-    // Using provider defaults: ./authorizer/schema.yaml and ./authorizer/policies
-    // actionGroupEnforcement defaults to 'error'
-    // Run canaries in this environment (explicit path under ./authorizer)
-    canaryFile: "./authorizer/canaries.yaml",
+    // Use shared example assets for parity with Terraform example
+    schemaFile: "./shared/schema.yaml",
+    policyDir: "./shared/policies",
+    canaryFile: "./shared/canaries.yaml",
   },
 });
 

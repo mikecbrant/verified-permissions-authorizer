@@ -18,7 +18,7 @@ import (
     "github.com/pulumi/pulumi-go-provider/infer"
     "github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-    sharedassets "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/assets"
+    sharedassets "github.com/mikecbrant/verified-permissions-authorizer/providers/assets"
 )
 
 var authorizerIndexMjs = sharedassets.GetAuthorizerIndexMjs()
@@ -26,7 +26,7 @@ var authorizerIndexMjs = sharedassets.GetAuthorizerIndexMjs()
 // NewProvider exposes construction to allow early sanity checks on embedded assets.
 func NewProvider() (p.Provider, error) {
     if strings.TrimSpace(authorizerIndexMjs) == "" {
-        return nil, fmt.Errorf("embedded authorizer lambda (index.mjs) not found; ensure CI populated providers/internal/assets/lambda/index.mjs before building the provider")
+        return nil, fmt.Errorf("embedded authorizer lambda (index.mjs) not found; ensure CI populated providers/assets/lambda/index.mjs before building the provider")
     }
     return infer.NewProviderBuilder().
         WithComponents(infer.ComponentF(NewAuthorizerWithPolicyStore)).
@@ -34,14 +34,7 @@ func NewProvider() (p.Provider, error) {
 }
 
 // Note: The provider also includes a minimal Cognito trigger stub under
-// packages/provider/assets/cognito-trigger-stub.mjs for future use.
-
-// NewProvider wires up the multi-language component provider surface.
-func NewProvider() (p.Provider, error) {
-    return infer.NewProviderBuilder().
-        WithComponents(infer.ComponentF(NewAuthorizerWithPolicyStore)).
-        Build()
-}
+// providers/pulumi/assets/cognito-trigger-stub.mjs for future use.
 
 // AuthorizerArgs defines the inputs for the component resource.
 type AuthorizerArgs struct {

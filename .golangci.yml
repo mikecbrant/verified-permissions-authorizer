@@ -1,0 +1,17 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - funlen
+    - gocyclo
+
+linters-settings:
+  funlen:
+    lines: 80   # soft limit; overage will be reported as a linter issue
+    statements: 40
+  gocyclo:
+    min-complexity: 15
+
+# Note: golangci-lint is not yet wired into CI; this config documents our preferences and can
+# be activated later by adding a `golangci-lint` step in workflows.

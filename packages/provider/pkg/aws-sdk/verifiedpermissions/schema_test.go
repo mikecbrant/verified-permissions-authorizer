@@ -20,10 +20,7 @@ func (f *fakeAPI) GetSchema(ctx context.Context, in *vpapi.GetSchemaInput, _ ...
 func (f *fakeAPI) PutSchema(ctx context.Context, in *vpapi.PutSchemaInput, _ ...func(*vpapi.Options)) (*vpapi.PutSchemaOutput, error) {
      if f.err != nil { return nil, f.err }
      // capture put body
-     switch def := in.Definition.(type) {
-     case *vptypes.SchemaDefinitionMemberCedarJson:
-         f.put = def.Value
-     case vptypes.SchemaDefinitionMemberCedarJson:
+     if def, ok := in.Definition.(*vptypes.SchemaDefinitionMemberCedarJson); ok {
          f.put = def.Value
      }
      return &vpapi.PutSchemaOutput{}, nil

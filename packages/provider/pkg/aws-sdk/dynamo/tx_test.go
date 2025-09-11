@@ -6,6 +6,7 @@ import (
      "testing"
 
      "github.com/mikecbrant/verified-permissions-authorizer/provider/internal/testutil"
+     "github.com/aws/smithy-go"
 )
 
 func TestWriteTransaction_BuildsActions(t *testing.T) {
@@ -24,13 +25,15 @@ func TestWriteTransaction_BuildsActions(t *testing.T) {
      if len(l.Calls) == 0 { t.Fatalf("expected logs to be emitted") }
 }
 
-// smithy APIError minimal fake
+// smithy APIError minimal fake that satisfies smithy.APIError
 type apiErr struct{ code string }
-func (e apiErr) Error() string   { return e.code }
-func (e apiErr) ErrorCode() string { return e.code }
-func (e apiErr) ErrorFault() string { return "client" }
-func (e apiErr) ErrorMessage() string { return e.code }
-func (e apiErr) ErrorName() string { return e.code }
+func (e apiErr) Error() string         { return e.code }
+func (e apiErr) ErrorCode() string     { return e.code }
+func (e apiErr) ErrorMessage() string  { return e.code }
+func (e apiErr) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
+
+// Ensure apiErr satisfies smithy.APIError at compile time.
+var _ smithy.APIError = (*apiErr)(nil)
 
 func TestClassifyErrors(t *testing.T) {
      tests := []struct{ in error; want string }{

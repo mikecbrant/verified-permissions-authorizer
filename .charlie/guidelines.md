@@ -21,3 +21,18 @@ Scope: internal modules under `packages/provider` and related tests.
 - Tests
   - Reuse `internal/testutil` fakes in unit tests (e.g., DynamoDB transact client).
   - Keep assertions focused; prefer stdlib helpers (e.g., `strings.Contains`) or thin wrappers in `internal/testutil` when repeated.
+
+- Pre‑PR checklist (must run locally before requesting review)
+  - JavaScript/TypeScript packages affected by your change:
+    - `pnpm -r typecheck` (or scope with `--filter {pkg}` when appropriate) — no TypeScript errors.
+    - `pnpm -r lint` — no ESLint errors or warnings (rules use `--max-warnings 0`).
+    - `pnpm -r test` — all unit tests green; `packages/lambda-authorizer` enforces 100% coverage on `src/**`.
+  - Go provider (`packages/provider`):
+    - `go vet ./...` — no vet findings.
+    - `go test ./... -cover` — tests green with coverage output.
+  - If a toolchain is unavailable locally (e.g., Go not installed), call this out in your PR body and rely on CI for that portion.
+
+- CI and merge policy
+  - All GitHub Actions checks must be green on the PR before merging. Do not merge with red or pending checks.
+  - If your change breaks a check, include the fix in the same PR whenever possible.
+  - Mark a PR “Ready for review” only after the local checklist above passes and CI is green or clearly isolated to a missing local toolchain.

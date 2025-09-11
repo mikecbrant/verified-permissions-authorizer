@@ -24,6 +24,7 @@ resource "vpauthorizer_authorizer" "example" {
 
   # Use the same example assets as the Pulumi stack (../shared)
   verified_permissions {
+    namespace   = "vpauthorizer.ticketing.demo.tf"
     schema_file = "../shared/schema.yaml"
     policy_dir  = "../shared/policies"
     canary_file = "../shared/canaries.yaml"

@@ -9,6 +9,12 @@ Scope: internal modules under `packages/provider` and related tests.
     - `internal/testutil`: shared fakes and helpers (e.g., buffer-backed logger, fake DynamoDB transact client, string helpers).
   - Do not duplicate small fakes or helpers inside individual test files; move them to `internal/testutil` and import.
 
+- Logging standard (Go)
+  - Use message + context everywhere: `Logger.Debug("op.name", logging.Fields{"key": value})`.
+  - Prefer short, lowerCamelCase keys; ensure values are JSON‑serializable.
+  - Avoid printf‑style `*f` logging APIs. If formatting is needed, compute values separately and place in context.
+  - Never log secrets or full record payloads; include only identifiers and counts needed for troubleshooting.
+
 - Error handling policy (Go)
   - Log at the point of failure when the code has the most context (include what was attempted and key identifiers), then return the error to the caller.
   - Avoid swallowing errors or converting them to logs-only outcomes. Let the higher level decide how to handle/translate errors.
@@ -17,6 +23,10 @@ Scope: internal modules under `packages/provider` and related tests.
 - Neutral placement for generic utilities
   - Avoid defining generic/shared utilities in AWS-specific packages. For example, the `Logger` interface lives in `pkg/logging` (not under `pkg/aws-sdk`).
   - AWS service–specific formatting helpers may live alongside the service code, but keep the logging surface generic.
+
+- Package/file organization
+  - Prefer smaller, single‑purpose Go files. Split entity‑specific helpers (e.g., DynamoDB key builders) into per‑entity files with matching tests.
+  - Keep generic helpers (e.g., DynamoDB AttributeValue constructors, JSON canonicalization) in common utility packages.
 
 - Tests
   - Reuse `internal/testutil` fakes in unit tests (e.g., DynamoDB transact client).

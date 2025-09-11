@@ -6,6 +6,7 @@ import (
 
      "github.com/aws/aws-sdk-go-v2/service/dynamodb"
      "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+     awserrors "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/awssdk/errors"
      "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/logging"
 )
 
@@ -34,18 +35,18 @@ func WriteTransaction(ctx context.Context, client interface{ TransactWriteItems(
              Item:                p.Item,
              ConditionExpression: &cond,
          }})
-         logger.Debugf("tx.put[%d]", i)
+         logger.Debug("dynamo.tx.put", logging.Fields{"index": i})
      }
      for i, c := range checks {
          actions = append(actions, types.TransactWriteItem{ConditionCheck: &types.ConditionCheck{
              Key:                 c.Key,
              ConditionExpression: &c.ConditionExpression,
          }})
-         logger.Debugf("tx.check[%d]", i)
+         logger.Debug("dynamo.tx.check", logging.Fields{"index": i})
      }
      _, err := client.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{ TransactItems: actions })
-     if err != nil { return classify(err) }
-     logger.Infof("tx.ok: %d puts, %d checks", len(puts), len(checks))
+     if err != nil { return awserrors.Classify(err) }
+     logger.Info("dynamo.tx.ok", logging.Fields{"puts": len(puts), "checks": len(checks)})
      return nil
 }
 

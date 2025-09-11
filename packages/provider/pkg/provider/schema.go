@@ -10,7 +10,7 @@ import (
     "strings"
 
     vpapi "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
-    vpwrap "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/aws-sdk/verifiedpermissions"
+    vp "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/awssdk/verifiedpermissions"
     awsvp "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/verifiedpermissions"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
     "gopkg.in/yaml.v3"
@@ -296,7 +296,7 @@ func putSchemaIfChanged(ctx *pulumi.Context, policyStoreId string, cedarJSON str
     // Use internal wrapper for idempotent PutSchema.
     // Construct client and delegate. This centralizes JSON minification and comparisons.
     pulumiCtx := ctx.Context()
-    if err := vpwrap.PutSchemaIfChanged(pulumiCtx, client, policyStoreId, cedarJSON); err != nil {
+    if err := vp.PutSchemaIfChanged(pulumiCtx, client, policyStoreId, cedarJSON); err != nil {
         return fmt.Errorf("failed to put schema: %w", err)
     }
     return nil

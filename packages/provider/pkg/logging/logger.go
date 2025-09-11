@@ -1,16 +1,22 @@
 package logging
 
+// Fields represents structured context for a log entry.
+// Keys should be short, lowerCamelCase; values must be JSON-serializable.
+type Fields map[string]any
+
 // Logger is a tiny leveled logger for internal library use.
-// It intentionally mirrors only the calls we need so tests can pass fakes.
+// Callers pass a message and optional structured context (key/value pairs).
+// Implementations should prefer structured output (JSON-friendly) and avoid
+// interpolating user data into the message string.
 type Logger interface {
-    Debugf(format string, args ...any)
-    Infof(format string, args ...any)
-    Warnf(format string, args ...any)
+    Debug(msg string, ctx Fields)
+    Info(msg string, ctx Fields)
+    Warn(msg string, ctx Fields)
 }
 
 // NopLogger discards all logs.
 type NopLogger struct{}
 
-func (NopLogger) Debugf(string, ...any) {}
-func (NopLogger) Infof(string, ...any)  {}
-func (NopLogger) Warnf(string, ...any)  {}
+func (NopLogger) Debug(string, Fields) {}
+func (NopLogger) Info(string, Fields)  {}
+func (NopLogger) Warn(string, Fields)  {}

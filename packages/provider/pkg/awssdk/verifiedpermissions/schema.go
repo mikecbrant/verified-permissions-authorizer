@@ -2,11 +2,11 @@ package verifiedpermissions
 
 import (
      "context"
-     "encoding/json"
      "fmt"
 
      vpapi "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
      vptypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
+     "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/jsonutil"
 )
 
 // API is the minimal surface used by PutSchemaIfChanged.
@@ -16,14 +16,8 @@ type API interface {
 }
 
 // PutSchemaIfChanged fetches the current schema for the given policy store and
-// issues PutSchema only when a semantic change is detected.
-//
-// Comparison details:
-// - The function normalizes both the current and desired Cedar JSON by
-//   unmarshaling and re-marshaling ("minification"). This makes comparison
-//   resilient to whitespace and key-order differences.
-// - If the normalized strings are equal, the call is a no-op and returns nil.
-// - Otherwise, PutSchema is invoked with the provided Cedar JSON.
+// issues PutSchema only when a semantic change is detected. Comparison uses
+// jsonutil.CanonicalizeJSON to avoid differences in whitespace or key order.
 //
 // Error handling:
 // - Any error from GetSchema or PutSchema is returned to the caller for
@@ -32,7 +26,7 @@ func PutSchemaIfChanged(ctx context.Context, api API, policyStoreId string, ceda
      if api == nil { return fmt.Errorf("api is nil") }
      currentOut, err := api.GetSchema(ctx, &vpapi.GetSchemaInput{PolicyStoreId: &policyStoreId})
      if err == nil && currentOut != nil && currentOut.Schema != nil {
-         if minify(*currentOut.Schema) == minify(cedarJSON) {
+         if jsonutil.CanonicalizeJSON(*currentOut.Schema) == jsonutil.CanonicalizeJSON(cedarJSON) {
              return nil
          }
      }
@@ -41,11 +35,4 @@ func PutSchemaIfChanged(ctx context.Context, api API, policyStoreId string, ceda
          Definition:    &vptypes.SchemaDefinitionMemberCedarJson{Value: cedarJSON},
      })
      return err
-}
-
-func minify(s string) string {
-     var v any
-     if err := json.Unmarshal([]byte(s), &v); err != nil { return s }
-     b, err := json.Marshal(v); if err != nil { return s }
-     return string(b)
 }

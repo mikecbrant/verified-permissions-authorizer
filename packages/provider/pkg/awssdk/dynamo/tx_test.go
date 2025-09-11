@@ -2,17 +2,18 @@ package dynamo
 
 import (
      "context"
-     "errors"
+     sterrors "errors"
      "testing"
 
-     "github.com/mikecbrant/verified-permissions-authorizer/provider/internal/testutil"
      "github.com/aws/smithy-go"
+     awserrors "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/awssdk/errors"
+     "github.com/mikecbrant/verified-permissions-authorizer/provider/internal/testutil"
 )
 
 func TestWriteTransaction_BuildsActions(t *testing.T) {
      c := &testutil.FakeDynamoTxnClient{}
      l := &testutil.BufferLogger{}
-     item := Item{"PK": KeyValue("A"), "SK": KeyValue("B")}
+     item := Item{"PK": StringAttribute("A"), "SK": StringAttribute("B")}
      if err := WriteTransaction(context.Background(), c, []TxPut{{Item: item}}, nil, l); err != nil {
          t.Fatalf("unexpected err: %v", err)
      }
@@ -42,11 +43,11 @@ func TestClassifyErrors(t *testing.T) {
          {apiErr{"ProvisionedThroughputExceededException"}, "retryable"},
          {apiErr{"ThrottlingException"}, "retryable"},
          {apiErr{"RequestLimitExceeded"}, "retryable"},
-         {errors.New("boom"), "op error"},
+         {sterrors.New("boom"), "op error"},
      }
      for _, tt := range tests {
-         got := classify(tt.in)
-         if got == nil || !errors.Is(got, got) { t.Fatalf("nil or not wrapping: %v", got) }
+         got := awserrors.Classify(tt.in)
+         if got == nil || !sterrors.Is(got, got) { t.Fatalf("nil or not wrapping: %v", got) }
          if !testutil.Contains(got.Error(), tt.want) {
              t.Fatalf("classify(%v) => %v; want contains %q", tt.in, got, tt.want)
          }

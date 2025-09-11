@@ -2,6 +2,7 @@ package testutil
 
 import (
     "context"
+    "fmt"
     "strings"
 
     "github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -20,11 +21,17 @@ func (f *FakeDynamoTxnClient) TransactWriteItems(ctx context.Context, in *dynamo
 }
 
 // BufferLogger is a buffer-backed logger that records calls for assertions.
-type BufferLogger struct{ Calls []string }
+type BufferLogger struct{ Calls []string; Entries []string }
 
-func (l *BufferLogger) Debugf(string, ...any) { l.Calls = append(l.Calls, "debug") }
-func (l *BufferLogger) Infof(string, ...any)  { l.Calls = append(l.Calls, "info") }
-func (l *BufferLogger) Warnf(string, ...any)  { l.Calls = append(l.Calls, "warn") }
+func (l *BufferLogger) Debug(msg string, ctx logging.Fields) { l.record("debug", msg, ctx) }
+func (l *BufferLogger) Info(msg string, ctx logging.Fields)  { l.record("info", msg, ctx) }
+func (l *BufferLogger) Warn(msg string, ctx logging.Fields)  { l.record("warn", msg, ctx) }
+
+func (l *BufferLogger) record(level, msg string, ctx logging.Fields) {
+    l.Calls = append(l.Calls, level)
+    // simple human-readable capture for assertions; not a JSON serializer
+    l.Entries = append(l.Entries, fmt.Sprintf("%s: %s ctx=%v", level, msg, ctx))
+}
 
 var _ logging.Logger = (*BufferLogger)(nil)
 

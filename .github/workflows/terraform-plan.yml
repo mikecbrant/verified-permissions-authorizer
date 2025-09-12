@@ -16,6 +16,7 @@ env:
 
 jobs:
   plan:
+    if: ${{ secrets.TF_API_TOKEN != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -51,3 +52,11 @@ jobs:
       - name: Terraform Plan (remote run in TFC)
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform plan -no-color -input=false
+
+  # Provide a friendly no-op when TF_API_TOKEN isn't available in PR context
+  no_token:
+    if: ${{ secrets.TF_API_TOKEN == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip plan (no TF_API_TOKEN)
+        run: echo "Skipping Terraform plan: TF_API_TOKEN not configured for PR runs."

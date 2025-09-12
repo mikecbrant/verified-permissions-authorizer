@@ -5,7 +5,7 @@ import (
     "fmt"
     "os"
 
-    "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/provider"
+    "github.com/mikecbrant/verified-permissions-authorizer/packages/provider/pkg/provider"
     p "github.com/pulumi/pulumi-go-provider"
 )
 

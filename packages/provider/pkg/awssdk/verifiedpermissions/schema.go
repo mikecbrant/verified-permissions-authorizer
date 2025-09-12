@@ -6,7 +6,7 @@ import (
 
      vpapi "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
      vptypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
-     "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/jsonutil"
+     "github.com/mikecbrant/verified-permissions-authorizer/packages/provider/pkg/jsonutil"
 )
 
 // API is the minimal surface used by PutSchemaIfChanged.

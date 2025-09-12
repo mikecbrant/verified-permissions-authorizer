@@ -6,7 +6,7 @@ import (
     "strings"
 
     "github.com/aws/aws-sdk-go-v2/service/dynamodb"
-    "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/logging"
+    "github.com/mikecbrant/verified-permissions-authorizer/packages/provider/pkg/logging"
 )
 
 // FakeDynamoTxnClient is a minimal fake for TransactWriteItems used in tests.

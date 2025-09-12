@@ -14,9 +14,9 @@
     "release": "changeset version && pnpm -r build",
     "test": "pnpm -r test && pnpm go:test",
     "validate:avp": "npx -y avp-validate --schema infra/authorizer/schema.yaml --policyDir infra/authorizer/policies --mode error",
-    "go:lint": "bash -lc 'cd packages/provider && go mod tidy && go vet ./...'",
-    "go:test": "bash -lc \"if command -v go >/dev/null 2>&1; then cd packages/provider && go mod tidy && go test ./... -coverprofile=coverage.out -covermode=count; else echo '[skip] go not installed; skipping provider tests locally'; fi\"",
-    "format:go": "bash -lc 'gofmt -s -w packages/provider'"
+    "go:lint": "bash -lc 'if command -v go >/dev/null 2>&1; then go vet ./...; else echo \"[skip] go not installed; skipping go vet\"; fi'",
+    "go:test": "bash -lc \"if command -v go >/dev/null 2>&1; then go test ./... -coverprofile=coverage.out -covermode=count; else echo '[skip] go not installed; skipping Go tests locally'; fi\"",
+    "format:go": "bash -lc 'gofmt -s -w .'"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.8",

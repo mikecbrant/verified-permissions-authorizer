@@ -6,8 +6,8 @@ import (
 
      "github.com/aws/aws-sdk-go-v2/service/dynamodb"
      "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-     awserrors "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/awssdk/errors"
-     "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/logging"
+     awserrors "github.com/mikecbrant/verified-permissions-authorizer/packages/provider/pkg/awssdk/errors"
+     "github.com/mikecbrant/verified-permissions-authorizer/packages/provider/pkg/logging"
 )
 
 // TxPut defines a put with a standard not-exists condition for (PK, SK).

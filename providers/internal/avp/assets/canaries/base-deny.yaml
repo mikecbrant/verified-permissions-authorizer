@@ -1,5 +1,0 @@
-cases:
-  - principal: { entityType: GlobalRole, entityId: "*" }
-    action: GetTenant
-    resource: { entityType: Tenant, entityId: t/unknown }
-    expect: DENY

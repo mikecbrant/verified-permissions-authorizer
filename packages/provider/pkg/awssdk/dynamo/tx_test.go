@@ -6,8 +6,8 @@ import (
      "testing"
 
      "github.com/aws/smithy-go"
-     awserrors "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/awssdk/errors"
-     "github.com/mikecbrant/verified-permissions-authorizer/provider/internal/testutil"
+     awserrors "github.com/mikecbrant/verified-permissions-authorizer/packages/provider/pkg/awssdk/errors"
+     "github.com/mikecbrant/verified-permissions-authorizer/packages/provider/internal/testutil"
 )
 
 func TestWriteTransaction_BuildsActions(t *testing.T) {

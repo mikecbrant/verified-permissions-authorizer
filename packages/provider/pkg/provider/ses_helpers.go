@@ -1,8 +1,8 @@
 package provider
 
 import (
-    sharedidentity "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/identity"
-    sharedaws "github.com/mikecbrant/verified-permissions-authorizer/providers/internal/awsutil"
+    sharedses "github.com/mikecbrant/verified-permissions-authorizer/internal/common/ses"
+    sharedaws "github.com/mikecbrant/verified-permissions-authorizer/internal/awssdk"
 )
 
 // CognitoSesConfig describes optional SES settings to configure Cognito User Pool email sending.
@@ -19,5 +19,5 @@ func partitionForRegion(region string) string { return sharedaws.PartitionForReg
 // validateSesConfig performs static validation and domain/email checks. It returns the account id and identity name
 // parsed from the sourceArn when valid.
 func validateSesConfig(cfg CognitoSesConfig, userPoolRegion string) (account string, identity string, identityRegion string, err error) {
-    return sharedidentity.ValidateSesConfig(cfg.SourceArn, cfg.From, cfg.ReplyToEmail, userPoolRegion)
+    return sharedses.ValidateSesConfig(cfg.SourceArn, cfg.From, cfg.ReplyToEmail, userPoolRegion)
 }

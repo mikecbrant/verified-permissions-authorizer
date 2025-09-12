@@ -56,7 +56,7 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
     }
 
     // Read and parse schema (YAML or JSON → JSON string)
-    cedarJSON, ns, actions, err := loadAndValidateSchema(ctx, schemaPath)
+    cedarJSON, _, ns, actions, err := loadAndValidateSchema(ctx, schemaPath)
     if err != nil {
         return err
     }
@@ -157,32 +157,32 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
 }
 
 // loadAndValidateSchema parses YAML/JSON schema, enforces single namespace and required entities.
-// Returns cedar JSON string, namespace name, and the set of action names.
-func loadAndValidateSchema(ctx *pulumi.Context, schemaPath string) (string, string, []string, error) {
+// Returns (cedar JSON string, superset JSON string), namespace name, and the set of action names.
+func loadAndValidateSchema(ctx *pulumi.Context, schemaPath string) (string, string, string, []string, error) {
     raw, err := os.ReadFile(schemaPath)
     if err != nil {
-        return "", "", nil, fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
+        return "", "", "", nil, fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
     }
     var doc any
     switch strings.ToLower(filepath.Ext(schemaPath)) {
     case ".yaml", ".yml":
         if err := yaml.Unmarshal(raw, &doc); err != nil {
-            return "", "", nil, fmt.Errorf("invalid YAML in %s: %w", schemaPath, err)
+            return "", "", "", nil, fmt.Errorf("invalid YAML in %s: %w", schemaPath, err)
         }
     case ".json":
         if err := json.Unmarshal(raw, &doc); err != nil {
-            return "", "", nil, fmt.Errorf("invalid JSON in %s: %w", schemaPath, err)
+            return "", "", "", nil, fmt.Errorf("invalid JSON in %s: %w", schemaPath, err)
         }
     default:
-        return "", "", nil, fmt.Errorf("unsupported schema extension %q; expected .yaml, .yml, or .json", filepath.Ext(schemaPath))
+        return "", "", "", nil, fmt.Errorf("unsupported schema extension %q; expected .yaml, .yml, or .json", filepath.Ext(schemaPath))
     }
     // Expect top-level object: { "<namespace>": { entityTypes: {...}, actions: {...} } }
     top, ok := doc.(map[string]any)
     if !ok {
-        return "", "", nil, fmt.Errorf("schema must be a mapping of namespace → {entityTypes, actions}")
+        return "", "", "", nil, fmt.Errorf("schema must be a mapping of namespace → {entityTypes, actions}")
     }
     if len(top) != 1 {
-        return "", "", nil, fmt.Errorf("AVP supports a single namespace per schema; found %d namespaces", len(top))
+        return "", "", "", nil, fmt.Errorf("AVP supports a single namespace per schema; found %d namespaces", len(top))
     }
     var ns string
     var body any
@@ -200,15 +200,15 @@ func loadAndValidateSchema(ctx *pulumi.Context, schemaPath string) (string, stri
     // Required entity presence checks
     bmap, ok := body.(map[string]any)
     if !ok {
-        return "", "", nil, fmt.Errorf("schema namespace %q must map to an object", ns)
+        return "", "", "", nil, fmt.Errorf("schema namespace %q must map to an object", ns)
     }
     etRaw, ok := bmap["entityTypes"]
     if !ok {
-        return "", "", nil, fmt.Errorf("schema namespace %q must define entityTypes", ns)
+        return "", "", "", nil, fmt.Errorf("schema namespace %q must define entityTypes", ns)
     }
     et, ok := etRaw.(map[string]any)
     if !ok {
-        return "", "", nil, fmt.Errorf("entityTypes must be an object of entity type definitions")
+        return "", "", "", nil, fmt.Errorf("entityTypes must be an object of entity type definitions")
     }
     requiredPrincipals := []string{"Tenant", "User", "Role", "GlobalRole", "TenantGrant"}
     missing := []string{}
@@ -218,7 +218,7 @@ func loadAndValidateSchema(ctx *pulumi.Context, schemaPath string) (string, stri
         }
     }
     if len(missing) > 0 {
-        return "", "", nil, fmt.Errorf("schema namespace %q missing required principal entity types: %s", ns, strings.Join(missing, ", "))
+        return "", "", "", nil, fmt.Errorf("schema namespace %q missing required principal entity types: %s", ns, strings.Join(missing, ", "))
     }
     // Hierarchy expectation: Tenant supports homogeneous tree → memberOfTypes includes Tenant
     if def, ok := et["Tenant"].(map[string]any); ok {
@@ -246,15 +246,79 @@ func loadAndValidateSchema(ctx *pulumi.Context, schemaPath string) (string, stri
     // Re-encode to canonical JSON (minified) for PutSchema
     b, err := json.Marshal(top)
     if err != nil {
-        return "", "", nil, fmt.Errorf("failed to encode schema as JSON: %w", err)
+        return "", "", "", nil, fmt.Errorf("failed to encode schema as JSON: %w", err)
     }
     // Size validation per AVP limit: 100,000 bytes
     if sz := len(b); sz > 100000 {
-        return "", "", nil, fmt.Errorf("schema JSON size %d exceeds 100,000 byte limit", sz)
+        return "", "", "", nil, fmt.Errorf("superset schema JSON size %d exceeds 100,000 byte limit", sz)
     } else if sz >= 95000 {
-        ctx.Log.Warn(fmt.Sprintf("schema JSON size %d is >= 95%% of 100,000 byte limit", sz), &pulumi.LogArgs{})
+        ctx.Log.Warn(fmt.Sprintf("superset schema JSON size %d is >= 95%% of 100,000 byte limit", sz), &pulumi.LogArgs{})
     }
-    return string(b), ns, acts, nil
+    // Prepare Cedar-only JSON by pruning superset extensions (resourceEntities, actions.input/entityMap, and root mappings)
+    // Work on a deep copy to keep a superset string for bundling alongside the Lambda.
+    var superset map[string]any
+    if err := json.Unmarshal(b, &superset); err != nil {
+        return "", "", "", nil, fmt.Errorf("failed to reparse schema JSON: %w", err)
+    }
+    // Create a Cedar-only copy
+    cedar, err := deepCopy(superset)
+    if err != nil { return "", "", "", nil, fmt.Errorf("failed to copy superset for pruning: %w", err) }
+    pruneSuperset(cedar)
+    cj, err := json.Marshal(cedar)
+    if err != nil { return "", "", "", nil, fmt.Errorf("failed to encode pruned Cedar JSON: %w", err) }
+    sj, err := json.Marshal(superset)
+    if err != nil { return "", "", "", nil, fmt.Errorf("failed to encode superset JSON: %w", err) }
+    // Size checks on Cedar JSON only (AVP limit)
+    if sz := len(cj); sz > 100000 {
+        return "", "", "", nil, fmt.Errorf("Cedar schema JSON size %d exceeds 100,000 byte limit", sz)
+    } else if sz >= 95000 {
+        ctx.Log.Warn(fmt.Sprintf("Cedar schema JSON size %d is >= 95%% of 100,000 byte limit", sz), &pulumi.LogArgs{})
+    }
+    return string(cj), string(sj), ns, acts, nil
+}
+
+// deepCopy performs a JSON round-trip to clone arbitrary structures.
+func deepCopy[T any](v T) (T, error) {
+    b, err := json.Marshal(v)
+    if err != nil {
+        var zero T
+        return zero, err
+    }
+    var out T
+    if err := json.Unmarshal(b, &out); err != nil {
+        var zero T
+        return zero, err
+    }
+    return out, nil
+}
+
+// pruneSuperset removes non-Cedar fields: root.mappings, entityTypes.*.resourceEntities, actions.*.(input|entityMap)
+func pruneSuperset(doc map[string]any) {
+    // Single namespace only; find its body
+    var ns string
+    for k := range doc { ns = k; break }
+    body, _ := doc[ns].(map[string]any)
+    if body == nil { return }
+    // Root-level mappings
+    delete(body, "mappings")
+    // entityTypes
+    if etRaw, ok := body["entityTypes"].(map[string]any); ok {
+        for _, v := range etRaw {
+            if m, ok := v.(map[string]any); ok {
+                delete(m, "resourceEntities")
+            }
+        }
+    }
+    // actions
+    if aRaw, ok := body["actions"].(map[string]any); ok {
+        for _, v := range aRaw {
+            if m, ok := v.(map[string]any); ok {
+                delete(m, "input")
+                delete(m, "entityMap")
+            }
+        }
+    }
+    doc[ns] = body
 }
 
 // enforceActionGroups checks that action names map cleanly to canonical groups via exact, case-sensitive prefixes.

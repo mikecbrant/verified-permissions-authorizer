@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { mergeCedarSchemas } from './merge.js'
+import { mergeCedarSchemas, validateSuperset } from './merge.js'
 
 const baseYaml = `ns:
   entityTypes:
@@ -8,67 +8,68 @@ const baseYaml = `ns:
     User: { shape: { type: Record, attributes: {} } }
     Role: { shape: { type: Record, attributes: {} } }
     GlobalRole: { shape: { type: Record, attributes: {} } }
-    TenantGrant: { shape: { type: Record, attributes: {} } }
+    TenantGrant:
+      memberOfTypes: [Role, Tenant, User]
+      shape: { type: Record, attributes: { tenantId: { type: String }, userId: { type: String } } }
   actions:
-    Get: { appliesTo: { resourceTypes: [Tenant] } }
+    Get: { appliesTo: { principalTypes: [User, GlobalRole, Role, Tenant, TenantGrant] } }
 `
 
-describe('mergeCedarSchemas', () => {
-  it('merges new resource entity and action and returns mappings', () => {
+describe('mergeCedarSchemas (per-action, resourceEntities)', () => {
+  it('augments existing entity with resourceEntities and adds per-action input/entityMap', () => {
     const partial = `ns:
   entityTypes:
-    File: { shape: { type: Record, attributes: { path: { type: String } } } }
+    TenantGrant:
+      resourceEntities:
+        anyByTenantId:
+          id: '*'
+          type: TenantGrant
+          attributes: { tenantId: $tenantId, userId: '*' }
+          parents: []
+        byTenantIdAndUserId:
+          id: $tenantId:$userId
+          type: TenantGrant
+          attributes: { tenantId: $tenantId, userId: $userId }
+          parents: []
   actions:
-    GetFile: { memberOf: [Get], appliesTo: { resourceTypes: [File] } }
+    getTenantGrant:
+      memberOf: [Get]
+      appliesTo: { resourceTypes: [TenantGrant] }
+      entityMap: { TenantGrant: byTenantIdAndUserId }
+      input:
+        appsync:
+          body: { tenantId: tenantId, userId: userId }
+        rest:
+          url: '/tenant-grant/:tenantId/:userId'
   mappings:
-    properties:
-      tenantId:
-        appsync: { path: "arguments.tenantId" }
-        apiGateway: { source: path, name: tenantId }
+    actions:
+      appsync: { path: info.fieldName }
+      apiGateway: { path: requestContext.httpMethod }
 `
-    const { cedarJson, namespace, mappings } = mergeCedarSchemas(baseYaml, partial)
+    const { supersetJson, cedarJson, namespace } = mergeCedarSchemas(baseYaml, partial)
     expect(namespace).toBe('ns')
-    const obj = JSON.parse(cedarJson)
-    expect(obj.ns.entityTypes.File).toBeTruthy()
-    expect(obj.ns.actions.GetFile).toBeTruthy()
-    expect(mappings?.properties?.tenantId?.appsync?.path).toBe('arguments.tenantId')
+    const superset = JSON.parse(supersetJson)
+    expect(superset.ns.entityTypes.TenantGrant.resourceEntities.byTenantIdAndUserId).toBeTruthy()
+    expect(superset.ns.actions.getTenantGrant.entityMap.TenantGrant).toBe('byTenantIdAndUserId')
+    // Pruned Cedar should not contain superset-only keys
+    const cedar = JSON.parse(cedarJson)
+    expect(cedar.ns.entityTypes.TenantGrant.resourceEntities).toBeUndefined()
+    expect(cedar.ns.actions.getTenantGrant.entityMap).toBeUndefined()
+    expect(cedar.ns.actions.getTenantGrant.input).toBeUndefined()
+    // Validate cross-references
+    const errs = validateSuperset(superset)
+    expect(errs).toEqual([])
   })
 
-  it('rejects overriding base entity or action', () => {
-    const partial = `ns:
-  entityTypes:
-    Tenant: { shape: { type: Record, attributes: {} } }
-`
-    expect(() => mergeCedarSchemas(baseYaml, partial)).toThrow(/cannot override base entityType Tenant/)
+  it('rejects overriding base Cedar fields on entity and action', () => {
+    const badEntity = `ns:\n  entityTypes:\n    Tenant: { shape: { type: Record, attributes: { x: { type: String } } } }\n`
+    expect(() => mergeCedarSchemas(baseYaml, badEntity)).toThrow(/cannot override base entityType Tenant\.shape/)
+    const badAction = `ns:\n  actions:\n    Get: { appliesTo: { resourceTypes: [User] } }\n`
+    expect(() => mergeCedarSchemas(baseYaml, badAction)).toThrow(/cannot override base action Get\.appliesTo/)
   })
 
-  it('rejects principal type additions', () => {
-    const partial = `ns:
-  entityTypes:
-    GlobalRole: { shape: { type: Record, attributes: {} } }
-`
-    expect(() => mergeCedarSchemas(baseYaml, partial)).toThrow(/cannot (override base entityType|add or modify principal type) GlobalRole/)
-  })
-
-  it('rejects namespace mismatch', () => {
-    const partial = `other: {}`
-    expect(() => mergeCedarSchemas(baseYaml, partial)).toThrow(/namespace mismatch/)
-  })
-
-  it('rejects multiple namespaces in partial', () => {
-    const partial = `a: {}\nb: {}`
-    expect(() => mergeCedarSchemas(baseYaml, partial)).toThrow(/exactly one namespace/)
-  })
-
-  it('rejects overriding existing action', () => {
-    const partial = `ns:\n  actions:\n    Get: { appliesTo: { resourceTypes: [User] } }\n`
-    expect(() => mergeCedarSchemas(baseYaml, partial)).toThrow(/cannot override base action Get/)
-  })
-
-  it('accepts partial with only mappings (no entityTypes/actions)', () => {
-    const partial = `ns:\n  mappings:\n    properties: { tenantId: { appsync: { path: arguments.tenantId } } }\n`
-    const res = mergeCedarSchemas(baseYaml, partial)
-    expect(JSON.parse(res.cedarJson).ns.entityTypes.Tenant).toBeTruthy()
-    expect(res.mappings?.properties?.tenantId).toBeTruthy()
+  it('rejects namespace mismatch and multiple namespaces', () => {
+    expect(() => mergeCedarSchemas(baseYaml, 'other: {}')).toThrow(/namespace mismatch/)
+    expect(() => mergeCedarSchemas(baseYaml, 'a: {}\nb: {}')).toThrow(/exactly one namespace/)
   })
 })

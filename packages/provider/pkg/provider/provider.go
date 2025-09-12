@@ -4,6 +4,8 @@ import (
     "embed"
     "encoding/json"
     "fmt"
+    "os"
+    "path/filepath"
     "net/mail"
     "strings"
 
@@ -312,10 +314,32 @@ func NewAuthorizerWithPolicyStore(
         return nil, err
     }
 
-    // 3) Lambda code: embed built authorizer
-    code := pulumi.NewAssetArchive(map[string]interface{}{
+    // 3) Lambda code: embed built authorizer (+ merged schema superset JSON when available)
+    assets := map[string]interface{}{
         "index.mjs": pulumi.NewStringAsset(authorizerIndexMjs),
-    })
+    }
+    if args.VerifiedPermissions != nil {
+        // Resolve schema path similar to applySchemaAndPolicies
+        schemaPath := "./authorizer/schema.yaml"
+        if args.VerifiedPermissions.SchemaFile != nil && strings.TrimSpace(*args.VerifiedPermissions.SchemaFile) != "" {
+            schemaPath = strings.TrimSpace(*args.VerifiedPermissions.SchemaFile)
+        }
+        if !strings.HasPrefix(schemaPath, "/") {
+            if cwd, err := os.Getwd(); err == nil {
+                schemaPath = filepath.Join(cwd, schemaPath)
+            }
+        }
+        if st, err := os.Stat(schemaPath); err == nil && !st.IsDir() {
+            if _, supersetJSON, _, _, err := loadAndValidateSchema(ctx, schemaPath); err == nil {
+                assets["schema.merged.json"] = pulumi.NewStringAsset(supersetJSON)
+            } else {
+                ctx.Log.Warn(fmt.Sprintf("AVP: failed to load schema for bundling superset JSON: %v", err), &pulumi.LogArgs{})
+            }
+        } else {
+            ctx.Log.Warn(fmt.Sprintf("AVP: verifiedPermissions.schemaFile not found for bundling: %s", schemaPath), &pulumi.LogArgs{})
+        }
+    }
+    code := pulumi.NewAssetArchive(assets)
 
     // Defaults for authorizer Lambda config
     if args.Lambda == nil {

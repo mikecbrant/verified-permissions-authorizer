@@ -47,6 +47,9 @@ describe('processAuthorization', () => {
     const ev = {
       authorizationToken: `Bearer ${makeJwt()}`,
       requestContext: { apiId: 'abc' },
+      // Provide action + args so per-action mapping is exercised
+      info: { fieldName: 'getTenantGrant' },
+      arguments: { tenantId: 't1', userId: 'u1' },
     }
     const ok = await processAuthorization('ps', ev as any)
     expect(ok).toBe(true)
@@ -55,6 +58,18 @@ describe('processAuthorization', () => {
   it('falls back to default subject when sub claim missing', async () => {
     const token = jwt.sign({ exp: Math.floor(Date.now() / 1000) + 60 }, secret)
     const ev = { type: 'REQUEST', methodArn: 'arn', headers: { authorization: `Bearer ${token}` } }
+    const ok = await processAuthorization('ps', ev as any)
+    expect(ok).toBe(true)
+  })
+
+  it('authorizes with API Gateway event using REST URL mapping', async () => {
+    const ev = {
+      type: 'REQUEST',
+      methodArn: 'arn:aws:execute-api:us-east-1:123:rest/GET/foo',
+      headers: { authorization: `Bearer ${makeJwt()}` },
+      rawPath: '/tenant-grant/acme/alice',
+      requestContext: { httpMethod: 'getTenantGrant' },
+    }
     const ok = await processAuthorization('ps', ev as any)
     expect(ok).toBe(true)
   })

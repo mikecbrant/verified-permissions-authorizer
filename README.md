@@ -20,7 +20,7 @@ Read the ADR for the full technical approach, assumptions, and integration guida
 - AWS region/credentials are inherited from the standard Pulumi AWS provider.
 - The provider is tightly coupled to the Lambda: changes to `packages/lambda-authorizer` cause a provider release.
 
-See `packages/provider/README.md`, `packages/lambda-authorizer/README.md`, and `packages/sdk/nodejs/` for package‑specific details.
+See `providers/pulumi/README.md`, `packages/lambda-authorizer/README.md`, and `packages/sdk/nodejs/` for package‑specific details.
 
 ### Compatibility
 - API Gateway (REST): Request authorizer mode only.
@@ -29,9 +29,37 @@ See `packages/provider/README.md`, `packages/lambda-authorizer/README.md`, and `
 
 ## Monorepo packages
 
-- `packages/provider`: the Go, bridged Pulumi Component Provider.
+- `providers/pulumi`: the Go, bridged Pulumi Component Provider.
 - `packages/lambda-authorizer`: the TypeScript Lambda authorizer implementation used by the provider.
 - `packages/sdk/nodejs`: the generated Node.js SDK published as `pulumi-verified-permissions-authorizer`.
+- `providers/terraform`: Terraform provider source (published to the Terraform Registry as `mikecbrant/vpauthorizer`).
+- `providers/common`: shared Go logic reused by both providers.
+
+## Terraform provider (mikecbrant/vpauthorizer)
+
+Install via required_providers:
+
+```hcl
+terraform {
+  required_providers {
+    vpauthorizer = {
+      source  = "mikecbrant/vpauthorizer"
+      version = ">= 0.1.0"
+    }
+  }
+}
+
+provider "vpauthorizer" {}
+
+resource "vpauthorizer_authorizer" "main" {
+  verified_permissions {
+    schema_file = "./authorizer/schema.yaml"
+    policy_dir  = "./authorizer/policies"
+  }
+}
+```
+
+See docs under `providers/terraform/docs` and runnable examples under `infra/terraform`.
 
 For local pre‑PR checks (Go build/vet/test and workspace lint/type/tests), see [.charlie/preflight.md](.charlie/preflight.md).
 
@@ -40,9 +68,9 @@ For local pre‑PR checks (Go build/vet/test and workspace lint/type/tests), see
 The Node SDK ships a small CLI that validates AVP assets locally (no AWS calls):
 
 ```
-npx avp-validate --schema ./infra/authorizer/schema.yaml --policyDir ./infra/authorizer/policies --mode error
+npx avp-validate --schema ./infra/shared/schema.yaml --policyDir ./infra/shared/policies --mode error
 # optional canaries
-npx avp-validate --schema ./infra/authorizer/schema.yaml --policyDir ./infra/authorizer/policies --canary ./infra/authorizer/canaries.yaml
+npx avp-validate --schema ./infra/shared/schema.yaml --policyDir ./infra/shared/policies --canary ./infra/shared/canaries.yaml
 ```
 
 - `--schema` (required): path to `schema.yaml`/`schema.yml` or `schema.json`

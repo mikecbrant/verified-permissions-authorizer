@@ -1,0 +1,62 @@
+name: Terraform Plan (Terraform Cloud)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_WORKING_DIR: infra/terraform
+  TFC_ORG: ${{ vars.TFC_ORG || 'mikecbrant' }}
+  TFC_WORKSPACE: ${{ vars.TFC_WORKSPACE || 'vp-authorizer' }}
+
+jobs:
+  plan:
+    if: ${{ secrets.TF_API_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Optional: Authenticate to HCP via GitHub OIDC. Today this action does not mint a Terraform Cloud
+      # CLI token; we still pass TF_API_TOKEN below. Leaving this step to enable future OIDC-only auth.
+      - name: HCP auth (OIDC)
+        id: hcp-auth
+        uses: hashicorp/hcp-auth-action@v0
+        with:
+          # Define this as a repository/environment variable (non-secret) like:
+          # HCP_WORKLOAD_IDENTITY_PROVIDER=iam/project/<proj>/workload-identity-provider/<name>
+          workload_identity_provider: ${{ vars.HCP_WORKLOAD_IDENTITY_PROVIDER }}
+
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          # Token used by the Terraform CLI to talk to Terraform Cloud (app.terraform.io)
+          # The HCP auth step above does not currently produce a Terraform Cloud API token.
+          # Add a repo/environment secret named TF_API_TOKEN that has access to the
+          # "mikecbrant/vp-authorizer" workspace in TFC.
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init (remote backend)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate -no-color
+
+      - name: Terraform Plan (remote run in TFC)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform plan -no-color -input=false
+
+  # Provide a friendly no-op when TF_API_TOKEN isn't available in PR context
+  no_token:
+    if: ${{ secrets.TF_API_TOKEN == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip plan (no TF_API_TOKEN)
+        run: echo "Skipping Terraform plan: TF_API_TOKEN not configured for PR runs."

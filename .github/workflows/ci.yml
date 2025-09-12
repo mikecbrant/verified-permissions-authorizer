@@ -39,13 +39,31 @@ jobs:
       - name: Unit tests (Node packages)
         run: pnpm -r test
 
-      - name: Setup Go
+      - name: Setup Go (Pulumi provider)
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'packages/provider/go.mod'
+          go-version-file: 'providers/pulumi/go.mod'
+
+      - name: Build Lambda (to embed)
+        run: pnpm --filter verified-permissions-lambda-authorizer build
+
+      - name: Copy built lambda into shared assets
+        run: |
+          mkdir -p providers/assets/lambda
+          cp packages/lambda-authorizer/dist/index.mjs providers/assets/lambda/index.mjs
+
+      - name: Setup Go for Terraform provider
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'providers/terraform/go.mod'
 
       - name: Go vet (lint)
-        run: pnpm go:lint
+        run: |
+          pnpm go:lint
+          # Basic compile of Terraform provider and shared packages
+          go build ./providers/common/...
+          go build ./providers/pulumi/...
+          go build ./providers/terraform/cmd/terraform-provider-vpauthorizer
 
       - name: Unit tests (Go provider)
         run: pnpm go:test

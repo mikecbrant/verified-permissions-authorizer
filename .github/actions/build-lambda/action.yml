@@ -1,0 +1,11 @@
+name: Build Lambda authorizer artifact
+description: Builds the Node Lambda authorizer and stages index.mjs into providers/assets for Go embedding.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        pnpm --filter verified-permissions-lambda-authorizer build
+        mkdir -p providers/assets/lambda
+        cp packages/lambda-authorizer/dist/index.mjs providers/assets/lambda/index.mjs

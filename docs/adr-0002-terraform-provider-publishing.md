@@ -145,7 +145,7 @@ Failure handling
    - Release failures when signatures or checksums are inconsistent (intentional, but adds toil).
    - Contributor friction for local testing if signatures are required for private mirrors.
    These costs are acceptable given the trust benefits; we will keep signing enabled.
-3. Documentation home: rely on registry‑rendered docs only, or also add a local `docs/terraform/*` folder in this repo and link from README.
+4. Documentation home: rely on registry‑rendered docs only, or also add a local `docs/terraform/*` folder in this repo and link from README.
 
 ## References
 - Publishing to the Terraform Registry (providers): https://developer.hashicorp.com/terraform/registry/providers/publishing

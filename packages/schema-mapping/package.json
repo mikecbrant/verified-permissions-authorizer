@@ -5,10 +5,10 @@
   "description": "Cedar schema superset merger and request mapping utilities",
   "license": "MIT",
   "type": "module",
-  "main": "dist/index.mjs",
+  "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsgo --module ES2022 --target ES2023 --moduleResolution Bundler --outDir dist --rootDir src --declaration true src/index.ts && mv dist/index.js dist/index.mjs",
+    "build": "tsc --outDir dist --rootDir src --declaration true --module ES2022 --target ES2023 --moduleResolution Bundler src/index.ts",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit --module ES2022 --target ES2023 --moduleResolution Bundler --lib ES2023,DOM src/merge.ts src/mapping.ts",
     "lint": "eslint \"src/**/*.ts\" --max-warnings 0",

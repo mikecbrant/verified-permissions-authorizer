@@ -171,6 +171,5 @@ func applySchemaAndPolicies(ctx *pulumi.Context, name string, store *awsvp.Polic
     return nil
 }
 
-// loadAndValidateSchema parses YAML/JSON schema, enforces single namespace and required entities.
-// Returns cedar JSON string, namespace name, and the set of action names.
+// Note: schema parsing/validation is implemented in providers/common/avp.
 // Note: schema parsing/validation and action-group enforcement live in providers/common/avp.

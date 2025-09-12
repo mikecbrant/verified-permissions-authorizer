@@ -211,7 +211,7 @@ func NewAuthorizerWithPolicyStore(
     // Ensure the table exists before policies so that future transactional patterns can write
     // metadata rows ahead of Verified Permissions policy creation.
     if args.VerifiedPermissions != nil {
-        applied := table.Arn.ApplyT(func(_ string) (string, error) {
+        applied := pulumi.All(table.Arn, store.ID()).ApplyT(func(_ []interface{}) (string, error) {
             if err := applySchemaAndPolicies(ctx, name, store, *args.VerifiedPermissions); err != nil {
                 return "", err
             }

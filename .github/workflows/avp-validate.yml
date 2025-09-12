@@ -3,10 +3,9 @@ name: AVP assets validation
 on:
   pull_request:
     paths:
-      - 'infra/authorizer/**'
-      - 'infra/authorize/**'
-      - 'packages/provider/pkg/provider/**'
-      - 'packages/provider/schema.json'
+      - 'infra/shared/**'
+      - 'infra/terraform/**'
+      - 'providers/pulumi/**'
       - 'packages/sdk/nodejs/**'
       - 'package.json'
 
@@ -34,4 +33,4 @@ jobs:
       - name: Build SDK CLI
         run: pnpm --filter "./packages/sdk/nodejs" build
       - name: Validate example AVP assets (SDK CLI)
-        run: node ./packages/sdk/nodejs/dist/bin/avp-validate.mjs --schema infra/authorizer/schema.yaml --policyDir infra/authorizer/policies --mode error
+        run: node ./packages/sdk/nodejs/dist/bin/avp-validate.mjs --schema infra/shared/schema.yaml --policyDir infra/shared/policies --mode error

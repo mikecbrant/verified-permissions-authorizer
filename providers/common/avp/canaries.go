@@ -97,18 +97,19 @@ func RunCombinedCanaries(ctx context.Context, region string, policyStoreId strin
             for k, v := range c.Context {
                 switch t := v.(type) {
                 case bool:
-                    cm[k] = vpapiTypes.AttributeValue{Boolean: &t}
+                    cm[k] = &vpapiTypes.AttributeValueMemberBoolean{Value: t}
                 case int:
-                    vv := int64(t); cm[k] = vpapiTypes.AttributeValue{Long: &vv}
+                    cm[k] = &vpapiTypes.AttributeValueMemberLong{Value: int64(t)}
                 case int64:
-                    vv := t; cm[k] = vpapiTypes.AttributeValue{Long: &vv}
+                    cm[k] = &vpapiTypes.AttributeValueMemberLong{Value: t}
                 case string:
-                    cm[k] = vpapiTypes.AttributeValue{String: &t}
+                    cm[k] = &vpapiTypes.AttributeValueMemberString{Value: t}
                 default:
-                    s := fmt.Sprint(v); cm[k] = vpapiTypes.AttributeValue{String: &s}
+                    s := fmt.Sprint(v)
+                    cm[k] = &vpapiTypes.AttributeValueMemberString{Value: s}
                 }
             }
-            in.Context = &vpapiTypes.ContextDefinition{ContextMap: cm}
+            in.Context = &vpapiTypes.ContextDefinitionMemberContextMap{Value: cm}
         }
         out, err := client.IsAuthorized(ctx, in)
         if err != nil {

@@ -1,6 +1,6 @@
 {
   "name": "pulumi-verified-permissions-authorizer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Pulumi Node.js SDK for the verified-permissions-authorizer component provider (Go).",
   "license": "MIT",
   "private": false,
@@ -57,7 +57,9 @@
     "coverage": {
       "provider": "v8",
       "all": false,
-      "include": ["src/**"],
+      "include": [
+        "src/**"
+      ],
       "thresholds": {
         "lines": 100,
         "functions": 100,

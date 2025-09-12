@@ -10,7 +10,7 @@ import (
     "strings"
 
     vpapi "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
-    vpapiTypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
+    vp "github.com/mikecbrant/verified-permissions-authorizer/provider/pkg/awssdk/verifiedpermissions"
     awsvp "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/verifiedpermissions"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
     "gopkg.in/yaml.v3"
@@ -293,23 +293,10 @@ func putSchemaIfChanged(ctx *pulumi.Context, policyStoreId string, cedarJSON str
     }
     client := vpapi.NewFromConfig(cfg)
 
-    // Fetch current schema; treat NotFound as empty
-    var current string
+    // Use internal wrapper for idempotent PutSchema.
+    // Construct client and delegate. This centralizes JSON minification and comparisons.
     pulumiCtx := ctx.Context()
-    getOut, err := client.GetSchema(pulumiCtx, &vpapi.GetSchemaInput{PolicyStoreId: &policyStoreId})
-    if err == nil && getOut.Schema != nil {
-        current = *getOut.Schema
-    }
-    if normalizeJson(current) == normalizeJson(cedarJSON) {
-        ctx.Log.Info("AVP: schema unchanged; skipping PutSchema", &pulumi.LogArgs{})
-        return nil
-    }
-    // Apply
-    _, err = client.PutSchema(pulumiCtx, &vpapi.PutSchemaInput{
-        PolicyStoreId: &policyStoreId,
-        Definition:    &vpapiTypes.SchemaDefinitionMemberCedarJson{Value: cedarJSON},
-    })
-    if err != nil {
+    if err := vp.PutSchemaIfChanged(pulumiCtx, client, policyStoreId, cedarJSON); err != nil {
         return fmt.Errorf("failed to put schema: %w", err)
     }
     return nil

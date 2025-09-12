@@ -130,7 +130,7 @@ func NewAuthorizerWithPolicyStore(
         args.Dynamo = &DynamoConfig{}
     }
 
-    // 1) Verified Permissions Policy Store
+    // Verified Permissions Policy Store
     storeArgs := &awsvp.PolicyStoreArgs{
         ValidationSettings: awsvp.PolicyStoreValidationSettingsArgs{
             Mode: pulumi.String("STRICT"),
@@ -151,14 +151,7 @@ func NewAuthorizerWithPolicyStore(
         return nil, err
     }
 
-    // 1a) Optional: Apply schema and ingest policies from assets
-    if args.VerifiedPermissions != nil {
-        if err := applySchemaAndPolicies(ctx, name, store, *args.VerifiedPermissions); err != nil {
-            return nil, err
-        }
-    }
-
-    // 1b) DynamoDB single-table for auth/identity/roles data
+    // DynamoDB single-table for auth/identity/roles data
     // Always parent to the component; retain on delete only when retention is enabled
     tableOpt := retOpts
 
@@ -214,7 +207,21 @@ func NewAuthorizerWithPolicyStore(
         return nil, err
     }
 
-    // 2) IAM Role
+    // Apply schema and ingest policies from assets
+    // Ensure the table exists before policies so that future transactional patterns can write
+    // metadata rows ahead of Verified Permissions policy creation.
+    if args.VerifiedPermissions != nil {
+        applied := table.Arn.ApplyT(func(_ string) (string, error) {
+            if err := applySchemaAndPolicies(ctx, name, store, *args.VerifiedPermissions); err != nil {
+                return "", err
+            }
+            return "ok", nil
+        }).(pulumi.StringOutput)
+        // Keep a reference so the apply executes as part of the update plan.
+        ctx.Export(fmt.Sprintf("%s-avpSchemaApplied", name), applied)
+    }
+
+    // IAM Role
     role, err := awsiam.NewRole(ctx, fmt.Sprintf("%s-role", name), &awsiam.RoleArgs{
         AssumeRolePolicy: awsiam.GetPolicyDocumentOutput(ctx, awsiam.GetPolicyDocumentOutputArgs{
             Statements: awsiam.GetPolicyDocumentStatementArray{
@@ -305,7 +312,7 @@ func NewAuthorizerWithPolicyStore(
         return nil, err
     }
 
-    // 3) Lambda code: embed built authorizer
+    // Lambda code: embed built authorizer
     code := pulumi.NewAssetArchive(map[string]interface{}{
         "index.mjs": pulumi.NewStringAsset(authorizerIndexMjs),
     })

@@ -1,4 +1,11 @@
 terraform {
+  cloud {
+    organization = "mikecbrant"
+    workspaces {
+      name = "vp-authorizer"
+    }
+  }
+
   required_providers {
     vpauthorizer = {
       source  = "mikecbrant/vpauthorizer"

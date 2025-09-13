@@ -211,14 +211,27 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
 	roleArn := *roleOut.Role.Arn
 
 	// Attach basic execution role
-	_, _ = iamc.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{RoleName: roleOut.Role.RoleName, PolicyArn: awsString("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")})
+	if _, err := iamc.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{RoleName: roleOut.Role.RoleName, PolicyArn: awsString("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")}); err != nil {
+		resp.Diagnostics.AddError("Attach IAM role policy failed", fmt.Sprintf("policy=%s role=%s err=%v", "AWSLambdaBasicExecutionRole", *roleOut.Role.RoleName, err))
+		return
+	}
 
 	// 4) Lambda function from embedded JS
 	zbuf := new(bytes.Buffer)
 	zw := zip.NewWriter(zbuf)
-	f, _ := zw.Create("index.mjs")
-	_, _ = f.Write([]byte(sharedassets.GetAuthorizerIndexMjs()))
-	_ = zw.Close()
+	f, err := zw.Create("index.mjs")
+	if err != nil {
+		resp.Diagnostics.AddError("zip create failed", err.Error())
+		return
+	}
+	if _, err := f.Write([]byte(sharedassets.GetAuthorizerIndexMjs())); err != nil {
+		resp.Diagnostics.AddError("zip write failed", err.Error())
+		return
+	}
+	if err := zw.Close(); err != nil {
+		resp.Diagnostics.AddError("zip close failed", err.Error())
+		return
+	}
 
 	lamb := lambda.NewFromConfig(cfg)
 	fnName := fmt.Sprintf("vpa-authorizer-%d", time.Now().Unix())
@@ -247,11 +260,19 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
 		schemaPath := strings.TrimSpace(strOrDefault(vpPlan.SchemaFile.ValueString(), "./authorizer/schema.yaml"))
 		policyDir := strings.TrimSpace(strOrDefault(vpPlan.PolicyDir.ValueString(), "./authorizer/policies"))
 		if !filepath.IsAbs(schemaPath) {
-			cwd, _ := os.Getwd()
+			cwd, err := os.Getwd()
+			if err != nil {
+				resp.Diagnostics.AddError("cwd error", err.Error())
+				return
+			}
 			schemaPath = filepath.Join(cwd, schemaPath)
 		}
 		if !filepath.IsAbs(policyDir) {
-			cwd, _ := os.Getwd()
+			cwd, err := os.Getwd()
+			if err != nil {
+				resp.Diagnostics.AddError("cwd error", err.Error())
+				return
+			}
 			policyDir = filepath.Join(cwd, policyDir)
 		}
 		if st, err := os.Stat(policyDir); err != nil || !st.IsDir() {
@@ -259,7 +280,7 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
 			return
 		}
 
-		cedarJSON, ns, actions, warns, err := sharedavp.LoadAndValidateSchema(schemaPath)
+		cedarJSON, _, actions, warns, err := sharedavp.LoadAndValidateSchema(schemaPath)
 		if err != nil {
 			resp.Diagnostics.AddError("Schema error", err.Error())
 			return
@@ -292,24 +313,42 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
 	}
 
 	// Outputs
-	resp.State.SetAttribute(ctx, path.Root("id"), types.StringValue(psId))
-	resp.State.SetAttribute(ctx, path.Root("policy_store_id"), types.StringValue(psId))
-	resp.State.SetAttribute(ctx, path.Root("policy_store_arn"), types.StringValue(psArn))
-	resp.State.SetAttribute(ctx, path.Root("lambda_authorizer_arn"), types.StringValue(*fnOut.FunctionArn))
-	resp.State.SetAttribute(ctx, path.Root("lambda_role_arn"), types.StringValue(roleArn))
-	// Dynamo outputs placeholder
-	// TODO: stream arn if enabled
-	resp.State.SetAttribute(ctx, path.Root("dynamo_table_arn"), types.StringValue(fmt.Sprintf("arn:aws:dynamodb:%s:table/%s", region, tableName)))
+	if di := resp.State.SetAttribute(ctx, path.Root("id"), types.StringValue(psId)); di.HasError() {
+		resp.Diagnostics.Append(di...)
+		return
+	}
+	if di := resp.State.SetAttribute(ctx, path.Root("policy_store_id"), types.StringValue(psId)); di.HasError() {
+		resp.Diagnostics.Append(di...)
+		return
+	}
+	if di := resp.State.SetAttribute(ctx, path.Root("policy_store_arn"), types.StringValue(psArn)); di.HasError() {
+		resp.Diagnostics.Append(di...)
+		return
+	}
+	if di := resp.State.SetAttribute(ctx, path.Root("lambda_authorizer_arn"), types.StringValue(*fnOut.FunctionArn)); di.HasError() {
+		resp.Diagnostics.Append(di...)
+		return
+	}
+	if di := resp.State.SetAttribute(ctx, path.Root("lambda_role_arn"), types.StringValue(roleArn)); di.HasError() {
+		resp.Diagnostics.Append(di...)
+		return
+	}
+	// Resolve and set DynamoDB table ARN from AWS to ensure correctness
+	ddesc, err := ddb.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: &tableName})
+	if err != nil {
+		resp.Diagnostics.AddError("Describe DynamoDB table failed", err.Error())
+		return
+	}
+	if di := resp.State.SetAttribute(ctx, path.Root("dynamo_table_arn"), types.StringValue(*ddesc.Table.TableArn)); di.HasError() {
+		resp.Diagnostics.Append(di...)
+		return
+	}
 }
 
-func (r *authorizerResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-}
-func (r *authorizerResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-}
-func (r *authorizerResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-}
-func (r *authorizerResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-}
+func (r *authorizerResource) Read(_ context.Context, _ resource.ReadRequest, _ *resource.ReadResponse) {}
+func (r *authorizerResource) Update(_ context.Context, _ resource.UpdateRequest, _ *resource.UpdateResponse) {}
+func (r *authorizerResource) Delete(_ context.Context, _ resource.DeleteRequest, _ *resource.DeleteResponse) {}
+func (r *authorizerResource) ImportState(_ context.Context, _ resource.ImportStateRequest, _ *resource.ImportStateResponse) {}
 
 func awsString(s string) *string { return &s }
 func awsInt32(v int32) *int32    { return &v }

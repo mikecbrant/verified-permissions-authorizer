@@ -1,0 +1,42 @@
+name: Terraform (Plan via TFC GitHub App)
+
+on:
+  pull_request:
+    paths:
+      - 'infra/terraform/**'
+      - '.github/workflows/terraform-plan.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+
+      - name: Terraform fmt (check)
+        working-directory: infra/terraform
+        run: terraform fmt -check -diff
+
+      - name: Terraform validate (no-backend)
+        working-directory: infra/terraform
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate -no-color
+
+      - name: Note
+        run: |
+          cat << 'MSG' >> $GITHUB_STEP_SUMMARY
+          Terraform Cloud GitHub App is configured to run speculative plans on pull requests.
+          This workflow runs fmt/validate locally and relies on TFC to execute the plan in workspace "vp-authorizer" (org: "mikecbrant").
+          MSG

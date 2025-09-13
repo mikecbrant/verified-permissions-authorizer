@@ -3,10 +3,17 @@ ignorePatterns:
   - '**/dist/**'
   - '**/generated/**'
 checkCommands:
-  fix: gofmt -s -w . && pmpn -r format:fix
-  lint: gofmt -d . && pnpm -r format
+  fix: gofmt -s -w . && pnpm format:write
+  lint: |
+    gofmt -d .
+    golangci-lint run ./...
+    pnpm -r format
   types: pnpm -r typecheck
-  test: go test . && pnpm -r test
+  test: |
+    go build ./...
+    go vet ./...
+    go test ./... -coverprofile=coverage.out -covermode=count
+    pnpm -r test
 beta:
   automaticallyReviewPullRequests: false
   skipEmptyReviews: true

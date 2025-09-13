@@ -57,12 +57,18 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
-      - name: Go vet (lint)
+      - name: Go build (all packages)
         run: |
-          pnpm go:lint
-          # Basic compile from root module
-          go build ./internal/...
-          go build ./cmd/terraform-provider-vpauthorizer
+          go build ./...
+
+      - name: Go vet (stdlib vet)
+        run: go vet ./...
+
+      - name: Lint (golangci-lint)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m ./...
 
       - name: Unit tests (Go provider)
-        run: pnpm go:test
+        run: go test ./... -coverprofile=coverage.out -covermode=count

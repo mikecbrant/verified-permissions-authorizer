@@ -10,7 +10,7 @@ The provider needs reusable, well-tested helpers that wrap low-level AWS SDK cal
 - Verified Permissions helpers (schema idempotence, thin client interface)
 
 ## Decisions
-- Create an internal Go library under `packages/provider/pkg/awssdk` with subpackages:
+- Create an internal Go library under `internal/awssdk` with subpackages:
    - `dynamo`: helpers for key building and a single entrypoint `WriteTransaction(ctx, client, items, opts...)` that composes `TransactWriteItems` with appropriate condition expressions and error mapping.
    - `verifiedpermissions`: helpers for `PutSchema` idempotence and lightweight interfaces that can be mocked in tests.
 - Keep functions short and single-purpose; expose small types and interfaces tailored to this provider.

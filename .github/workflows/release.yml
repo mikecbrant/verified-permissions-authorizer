@@ -146,18 +146,18 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'packages/provider/go.mod'
+          go-version-file: 'go.mod'
 
       - name: Build provider plugin
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          cd packages/provider/cmd/pulumi-resource-verified-permissions-authorizer
+          cd cmd/pulumi-resource-verified-permissions-authorizer
           go build -ldflags "-s -w" -o pulumi-resource-verified-permissions-authorizer
           cd -
           # Package
-          BIN=packages/provider/cmd/pulumi-resource-verified-permissions-authorizer/pulumi-resource-verified-permissions-authorizer
+          BIN=cmd/pulumi-resource-verified-permissions-authorizer/pulumi-resource-verified-permissions-authorizer
           if [ "${{ matrix.goos }}" = "windows" ]; then
             mv "$BIN" "${BIN}.exe"
             BIN="${BIN}.exe"
@@ -185,8 +185,8 @@ jobs:
           # Ensure provider/schema.json version matches the SDK version just published
           ver=${{ needs.version_or_publish.outputs.provider_version }}
           tmp=$(mktemp)
-          jq ".version = \"$ver\"" packages/provider/schema.json > "$tmp" && mv "$tmp" packages/provider/schema.json
-          npx pulumi@latest package publish packages/provider/schema.json --readme packages/provider/README.md
+          jq ".version = \"$ver\"" internal/pulumi/schema.json > "$tmp" && mv "$tmp" internal/pulumi/schema.json
+          npx pulumi@latest package publish internal/pulumi/schema.json --readme internal/pulumi/README.md
 
   build_and_publish_tf_provider:
     name: Build and Publish Terraform Provider
@@ -233,8 +233,8 @@ jobs:
 
       - name: Copy built lambda into shared assets
         run: |
-          mkdir -p providers/internal/assets/lambda
-          cp packages/lambda-authorizer/dist/index.mjs providers/internal/assets/lambda/index.mjs
+          mkdir -p internal/common/assets/lambda
+          cp packages/lambda-authorizer/dist/index.mjs internal/common/assets/lambda/index.mjs
 
       - name: Setup Go
         uses: actions/setup-go@v5

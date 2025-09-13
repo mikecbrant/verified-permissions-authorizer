@@ -20,7 +20,7 @@ Read the ADR for the full technical approach, assumptions, and integration guida
 - AWS region/credentials are inherited from the standard Pulumi AWS provider.
 - The provider is tightly coupled to the Lambda: changes to `packages/lambda-authorizer` cause a provider release.
 
-See `packages/provider/README.md`, `packages/lambda-authorizer/README.md`, and `packages/sdk/nodejs/` for package‑specific details.
+See `internal/pulumi/README.md`, `packages/lambda-authorizer/README.md`, and `packages/sdk/nodejs/` for package‑specific details.
 
 ### Compatibility
 - API Gateway (REST): Request authorizer mode only.
@@ -37,7 +37,7 @@ See `packages/provider/README.md`, `packages/lambda-authorizer/README.md`, and `
 - `cmd/terraform-provider-vpauthorizer`: Terraform provider binary entrypoint.
 - `infra/terraform`: Terraform examples.
 - `infra/pulumi`: Pulumi examples.
-- `packages/provider`: the Go, bridged Pulumi Component Provider (binary and SDK schema live here).
+- `internal/pulumi`: the Go, bridged Pulumi Component Provider (binary entrypoint under `cmd/pulumi-resource-verified-permissions-authorizer`; schema under `internal/pulumi/schema.json`).
 - `packages/lambda-authorizer`: the TypeScript Lambda authorizer implementation used by the providers.
 - `packages/sdk/nodejs`: the generated Node.js SDK published as `pulumi-verified-permissions-authorizer`.
 
@@ -59,8 +59,8 @@ provider "vpauthorizer" {}
 
 resource "vpauthorizer_authorizer" "main" {
   verified_permissions {
-    schema_file = "./authorizer/schema.yaml"
-    policy_dir  = "./authorizer/policies"
+    schema_file = "../authorizer/schema.yaml"
+    policy_dir  = "../authorizer/policies"
   }
 }
 ```
@@ -92,4 +92,4 @@ Action group enforcement is exact and case-sensitive against the canonical group
 
 ## Additional compatibility note
 
-- Cognito + SES email is supported when `cognito.sesConfig` is provided via the provider inputs (see `packages/provider/README.md`).
+- Cognito + SES email is supported when `cognito.sesConfig` is provided via the provider inputs (see `internal/pulumi/README.md`).

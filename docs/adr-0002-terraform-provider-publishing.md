@@ -107,7 +107,7 @@ Rationale
 If organizational requirements dictate private distribution later, Option B (Private Registry in HCP Terraform) is the preferred private path due to low friction and built‑in docs/UX. Options C/D remain viable for air‑gapped deployments.
 
 ## Build & Release implications (for Options A/B)
-- Repository layout: This Terraform provider lives under `internal/terraform` (logic) with the binary at `cmd/terraform-provider-vpauthorizer`, alongside a Pulumi provider under `packages/provider`. Core provider logic is factored into shared Go packages under `internal/common` and reused by both providers; the `terraform` and `pulumi` codepaths only map framework‑specific inputs/outputs.
+- Repository layout: This Terraform provider lives under `internal/terraform` (logic) with the binary at `cmd/terraform-provider-vpauthorizer`, alongside a Pulumi provider under `internal/pulumi`. Core provider logic is factored into shared Go packages under `internal/common` and reused by both providers; the `terraform` and `pulumi` codepaths only map framework‑specific inputs/outputs.
 - Artifacts per release:
   - `terraform-provider-<name>_vX.Y.Z_<os>_<arch>.zip` for supported platforms (Linux/amd64, Linux/arm64, Darwin/amd64, Darwin/arm64, Windows/amd64 at minimum).
   - `SHA256SUMS` and a detached signature (e.g., `SHA256SUMS.sig`).

@@ -189,7 +189,7 @@ Flows
 
 Repo‑level automation artifacts (high‑level)
 
-- Pulumi project under `infra/` (or `infra/vp-authorizer/`) that consumes the existing component provider from `packages/provider` and exposes minimal configuration.
+- Pulumi project under `infra/pulumi` that consumes the existing component provider from `internal/pulumi` (published to the Pulumi Registry) and exposes minimal configuration.
 - Pulumi stack configs: `Pulumi.pr.yaml` template for Review Stacks; `Pulumi.dev.yaml`, etc., for stable envs.
   - Example `Pulumi.pr.yaml` (minimal):
 
@@ -226,7 +226,7 @@ Security notes
 
 ## 6) Pulumi Registry release strategy (public and/or private)
 
-- We already maintain a Pulumi Component Provider in `packages/provider` with a Node SDK in `packages/sdk/nodejs`. The intended consumers are internal stacks and external users; publish to the public Pulumi Registry and npm under the current names.
+- We already maintain a Pulumi Component Provider in `internal/pulumi` with a Node SDK in `packages/sdk/nodejs`. The intended consumers are internal stacks and external users; publish to the public Pulumi Registry and npm under the current names.
 - Versioning & publishing: Continue using Changesets to produce semver releases. On release, publish:
    - Provider plugin binaries to GitHub Releases.
    - Node SDK to npm.

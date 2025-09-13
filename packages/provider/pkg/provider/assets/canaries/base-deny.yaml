@@ -1,6 +1,0 @@
-cases:
-  # Resource missing tenantId attribute should be denied for tenant-scoped actions
-  - principal: { entityType: User, entityId: user-1 }
-    action: Create
-    resource: { entityType: Ticket, entityId: t-1 }
-    expect: DENY

@@ -1,7 +1,0 @@
-name: vp-authorizer
-runtime: nodejs
-description: AWS Verified Permissions Policy Store and a bundled AWS Lambda Request Authorizer function
-config:
-  pulumi:tags:
-    value:
-      pulumi:template: https://api.pulumi.com/api/ai/chat/conversations/mikecbrant/mikecbrant/9a70ae83-bf0e-4ec0-b2a2-dbc005dd74c2/programs/Rwz8itH.zip

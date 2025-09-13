@@ -9,9 +9,9 @@ type Fields map[string]any
 // Implementations should prefer structured output (JSON-friendly) and avoid
 // interpolating user data into the message string.
 type Logger interface {
-    Debug(msg string, ctx Fields)
-    Info(msg string, ctx Fields)
-    Warn(msg string, ctx Fields)
+	Debug(msg string, ctx Fields)
+	Info(msg string, ctx Fields)
+	Warn(msg string, ctx Fields)
 }
 
 // NopLogger discards all logs.

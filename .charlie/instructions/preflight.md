@@ -8,10 +8,9 @@ Run these before opening a PR to keep CI green.
   - Workspace install completed: pnpm install
 
 - Go (provider)
-  - Build: `go build ./packages/provider/...`
-  - Vet: `go vet ./packages/provider/...`
-  - Test: `go test ./packages/provider/...`
-    - Optional coverage: `go test ./packages/provider/... -coverprofile=coverage.out -covermode=count`
+  - Build: `go build .`
+  - Vet: `go vet .`
+  - Test: `go test . -coverprofile=coverage.out -covermode=count`
 
 - Node (workspace)
   - Lint: `pnpm -r lint`

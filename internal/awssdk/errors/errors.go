@@ -1,10 +1,10 @@
 package errors
 
 import (
-    goerrors "errors"
-    "fmt"
+	goerrors "errors"
+	"fmt"
 
-    "github.com/aws/smithy-go"
+	"github.com/aws/smithy-go"
 )
 
 // ConflictError indicates a uniqueness/conditional conflict; callers should not blindly retry.
@@ -29,17 +29,17 @@ func (e *OpError) Unwrap() error { return e.Cause }
 // Service-specific packages may add further handling, but should prefer using this
 // function for standard throttling/throughput/transaction cases.
 func Classify(err error) error {
-    if err == nil {
-        return nil
-    }
-    var api smithy.APIError
-    if goerrors.As(err, &api) {
-        switch api.ErrorCode() {
-        case "ConditionalCheckFailedException", "TransactionCanceledException":
-            return &ConflictError{Cause: err}
-        case "ProvisionedThroughputExceededException", "ThrottlingException", "RequestLimitExceeded", "TransactionInProgressException":
-            return &RetryableError{Cause: err}
-        }
-    }
-    return &OpError{Cause: err}
+	if err == nil {
+		return nil
+	}
+	var api smithy.APIError
+	if goerrors.As(err, &api) {
+		switch api.ErrorCode() {
+		case "ConditionalCheckFailedException", "TransactionCanceledException":
+			return &ConflictError{Cause: err}
+		case "ProvisionedThroughputExceededException", "ThrottlingException", "RequestLimitExceeded", "TransactionInProgressException":
+			return &RetryableError{Cause: err}
+		}
+	}
+	return &OpError{Cause: err}
 }

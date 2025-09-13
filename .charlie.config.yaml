@@ -1,0 +1,15 @@
+ignorePatterns:
+  - '**/*.lock'
+  - '**/dist/**'
+  - '**/generated/**'
+checkCommands:
+  fix: gofmt -s -w . && pmpn -r format:fix
+  lint: gofmt -d . && pnpm -r format
+  types: pnpm -r typecheck
+  test: go test . && pnpm -r test
+beta:
+  automaticallyReviewPullRequests: false
+  skipEmptyReviews: true
+  filterReviewComments: true
+  canApprovePullRequests: false
+  forceAllCheckCommands: false

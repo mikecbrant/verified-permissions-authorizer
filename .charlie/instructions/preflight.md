@@ -8,6 +8,7 @@ Run these before opening a PR to keep CI green.
   - Workspace install completed: `pnpm install`
 
 - Go (root module)
+  - Tidy: `go mod tidy`
   - Build: `go build ./...`
   - Vet: `go vet ./...`
   - Lint: `golangci-lint run ./...`

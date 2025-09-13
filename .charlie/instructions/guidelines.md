@@ -1,13 +1,13 @@
 Engineering guidelines (provider repository)
 
-Scope: internal modules under `packages/provider` and related tests.
+Scope: Go modules under `internal/**` and provider entrypoints under `cmd/**`, plus related tests.
 
 - Common utilities first (DRY)
-  - Prefer small shared packages for cross-cutting helpers used by more than one subpackage.
+  - Prefer small shared packages for cross‑cutting helpers used by more than one package.
   - Examples in this repo:
-    - `pkg/logging`: tiny leveled `Logger` interface and `NopLogger` for reuse across internal libs and tests.
-    - `internal/testutil`: shared fakes and helpers (e.g., buffer-backed logger, fake DynamoDB transact client, string helpers).
-  - Do not duplicate small fakes or helpers inside individual test files; move them to `internal/testutil` and import.
+    - `internal/utils/logging`: tiny leveled `Logger` interface and `NopLogger` for reuse across internal libs and tests.
+    - `internal/utils`: shared helpers (e.g., JSON canonicalization, globbing).
+  - Do not duplicate small fakes or helpers inside individual test files; centralize and import.
 
 - Logging standard (Go)
   - Use message + context everywhere: `Logger.Debug("op.name", logging.Fields{"key": value})`.
@@ -17,32 +17,31 @@ Scope: internal modules under `packages/provider` and related tests.
 
 - Error handling policy (Go)
   - Log at the point of failure when the code has the most context (include what was attempted and key identifiers), then return the error to the caller.
-  - Avoid swallowing errors or converting them to logs-only outcomes. Let the higher level decide how to handle/translate errors.
+  - Avoid swallowing errors or converting them to logs‑only outcomes. Let the higher level decide how to handle/translate errors.
   - Prefer wrapping with `%w` to preserve the chain. For known classes, wrap in a typed error (e.g., `ConflictError`, `RetryableError`).
 
-- Neutral placement for generic utilities
-  - Avoid defining generic/shared utilities in AWS-specific packages. For example, the `Logger` interface lives in `pkg/logging` (not under `pkg/aws-sdk`).
-  - AWS service–specific formatting helpers may live alongside the service code, but keep the logging surface generic.
-
 - Package/file organization
-  - Prefer smaller, single‑purpose Go files. Split entity‑specific helpers (e.g., DynamoDB key builders) into per‑entity files with matching tests.
-  - Keep generic helpers (e.g., DynamoDB AttributeValue constructors, JSON canonicalization) in common utility packages.
+  - Prefer smaller, single‑purpose Go files. Split entity‑specific helpers into per‑entity files with matching tests.
+  - Keep generic helpers in shared utility packages under `internal/`.
 
 - Tests
-  - Reuse `internal/testutil` fakes in unit tests (e.g., DynamoDB transact client).
-  - Keep assertions focused; prefer stdlib helpers (e.g., `strings.Contains`) or thin wrappers in `internal/testutil` when repeated.
+  - Reuse shared fakes/helpers across tests.
+  - Keep assertions focused; prefer stdlib helpers (e.g., `strings.Contains`).
 
 - Pre‑PR checklist (must run locally before requesting review)
   - JavaScript/TypeScript packages affected by your change:
-    - `pnpm -r typecheck` (or scope with `--filter {pkg}` when appropriate) — no TypeScript errors.
-    - `pnpm -r lint` — no ESLint errors or warnings (rules use `--max-warnings 0`).
+    - `pnpm -r typecheck` — no TS errors.
+    - `pnpm -r lint` — no ESLint errors or warnings (`--max-warnings 0`).
     - `pnpm -r test` — all unit tests green; `packages/lambda-authorizer` enforces 100% coverage on `src/**`.
-  - Go provider (`packages/provider`):
+  - Go (root module):
+    - `go build ./...` — compiles cleanly.
     - `go vet ./...` — no vet findings.
-    - `go test ./... -cover` — tests green with coverage output.
-  - If a toolchain is unavailable locally (e.g., Go not installed), call this out in your PR body and rely on CI for that portion.
+    - `golangci-lint run ./...` — no lint issues.
+    - `go test ./... -cover` — tests green with coverage.
+  - If a toolchain is unavailable locally (e.g., Go not installed), call this out and rely on CI for that portion.
 
 - CI and merge policy
   - All GitHub Actions checks must be green on the PR before merging. Do not merge with red or pending checks.
   - If your change breaks a check, include the fix in the same PR whenever possible.
   - Mark a PR “Ready for review” only after the local checklist above passes and CI is green or clearly isolated to a missing local toolchain.
+

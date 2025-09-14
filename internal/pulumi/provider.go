@@ -24,7 +24,8 @@ var authorizerIndexMjs = sharedassets.GetAuthorizerIndexMjs()
 // NewProvider exposes construction to allow early sanity checks on embedded assets.
 func NewProvider() (p.Provider, error) {
 	if strings.TrimSpace(authorizerIndexMjs) == "" {
-		return nil, fmt.Errorf("embedded authorizer lambda (index.mjs) not found; ensure CI populated internal/common/assets/lambda/index.mjs before building the provider")
+		var zero p.Provider
+		return zero, fmt.Errorf("embedded authorizer lambda (index.mjs) not found; ensure CI populated internal/common/assets/lambda/index.mjs before building the provider")
 	}
 	return infer.NewProviderBuilder().
 		WithComponents(infer.ComponentF(NewAuthorizerWithPolicyStore)).
@@ -227,7 +228,7 @@ func NewAuthorizerWithPolicyStore(
 		Timeout:       pulumi.Int(10),
 		MemorySize:    pulumi.Int(128),
 		Environment:   &awslambda.FunctionEnvironmentArgs{Variables: pulumi.StringMap{"POLICY_STORE_ID": store.ID().ToStringOutput()}},
-		Code: pulumi.NewAssetArchive(map[string]pulumi.AssetOrArchive{
+		Code: pulumi.NewAssetArchive(map[string]interface{}{
 			"index.mjs": pulumi.NewStringAsset(authorizerIndexMjs),
 		}),
 		Publish: pulumi.Bool(true),
@@ -239,7 +240,7 @@ func NewAuthorizerWithPolicyStore(
 	// Outputs
 	comp.PolicyStoreId = store.ID().ToStringOutput()
 	comp.PolicyStoreArn = store.Arn
-	comp.Dynamo = DynamoOutputs{AuthTableArn: table.Arn, AuthTableStreamArn: table.StreamArn.Elem()}
+	comp.Dynamo = DynamoOutputs{AuthTableArn: table.Arn, AuthTableStreamArn: table.StreamArn}
 	comp.Lambda = LambdaOutputs{AuthorizerFunctionArn: fn.Arn, RoleArn: role.Arn}
 
 	// Optional Cognito
@@ -294,14 +295,14 @@ func NewAuthorizerWithPolicyStore(
 			}
 
 			// Group outputs (placeholder for future expanded outputs)
-			comp.Cognito = &CognitoOutputs{UserPoolArn: up.Arn, UserPoolId: up.ID().ToStringPtrOutput(), UserPoolClientIds: pulumi.ToStringArrayOutput([]string{})}
+			comp.Cognito = &CognitoOutputs{UserPoolArn: up.Arn.ToStringPtrOutput(), UserPoolId: up.ID().ToStringPtrOutput(), UserPoolClientIds: pulumi.ToStringArrayOutput([]pulumi.StringOutput{})}
 		} else {
 			// No SES config: just create a bare User Pool
 			up, err := awscognito.NewUserPool(ctx, fmt.Sprintf("%s-userpool", name), &awscognito.UserPoolArgs{}, childOpts...)
 			if err != nil {
 				return nil, err
 			}
-			comp.Cognito = &CognitoOutputs{UserPoolArn: up.Arn, UserPoolId: up.ID().ToStringPtrOutput(), UserPoolClientIds: pulumi.ToStringArrayOutput([]string{})}
+			comp.Cognito = &CognitoOutputs{UserPoolArn: up.Arn.ToStringPtrOutput(), UserPoolId: up.ID().ToStringPtrOutput(), UserPoolClientIds: pulumi.ToStringArrayOutput([]pulumi.StringOutput{})}
 		}
 	}
 

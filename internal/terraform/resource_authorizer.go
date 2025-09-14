@@ -87,7 +87,6 @@ func (r *authorizerResource) Schema(_ context.Context, _ resource.SchemaRequest,
 		},
 		Blocks: map[string]schema.Block{
 			"lambda": schema.SingleNestedBlock{
-				Optional: true,
 				Attributes: map[string]schema.Attribute{
 					"memory_size":             schema.Int64Attribute{Optional: true},
 					"reserved_concurrency":    schema.Int64Attribute{Optional: true},
@@ -95,19 +94,16 @@ func (r *authorizerResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				},
 			},
 			"dynamo": schema.SingleNestedBlock{
-				Optional: true,
 				Attributes: map[string]schema.Attribute{
 					"enable_dynamo_db_stream": schema.BoolAttribute{Optional: true},
 				},
 			},
 			"cognito": schema.SingleNestedBlock{
-				Optional: true,
 				Attributes: map[string]schema.Attribute{
 					"sign_in_aliases": schema.ListAttribute{Optional: true, ElementType: types.StringType},
 				},
 				Blocks: map[string]schema.Block{
 					"ses_config": schema.SingleNestedBlock{
-						Optional: true,
 						Attributes: map[string]schema.Attribute{
 							"source_arn":        schema.StringAttribute{Required: true},
 							"from":              schema.StringAttribute{Required: true},
@@ -118,7 +114,6 @@ func (r *authorizerResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				},
 			},
 			"verified_permissions": schema.SingleNestedBlock{
-				Optional: true,
 				Attributes: map[string]schema.Attribute{
 					"schema_file":              schema.StringAttribute{Optional: true},
 					"policy_dir":               schema.StringAttribute{Optional: true},
@@ -172,8 +167,12 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
 		resp.Diagnostics.AddError("Create policy store failed", err.Error())
 		return
 	}
-	psId := *psOut.PolicyStore.Id
-	psArn := *psOut.PolicyStore.Arn
+	psId := awsStringValue(psOut.PolicyStoreId)
+	psArn := awsStringValue(psOut.Arn)
+	if strings.TrimSpace(psId) == "" || strings.TrimSpace(psArn) == "" {
+		resp.Diagnostics.AddError("Create policy store failed", "missing policy store identifiers from CreatePolicyStore response")
+		return
+	}
 
 	// 2) DynamoDB table
 	ddb := dynamodb.NewFromConfig(cfg)
@@ -239,13 +238,13 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
 	fnOut, err := lamb.CreateFunction(ctx, &lambda.CreateFunctionInput{
 		FunctionName:  &fnName,
 		Role:          &roleArn,
-		Runtime:       lambdatypes.RuntimeNodejs22x,
+		Runtime:       lambdatypes.RuntimeNodejs20x,
 		Handler:       awsString("index.handler"),
 		Code:          &lambdatypes.FunctionCode{ZipFile: zbuf.Bytes()},
 		Architectures: []lambdatypes.Architecture{lambdatypes.ArchitectureArm64},
 		Timeout:       awsInt32(10),
 		MemorySize:    awsInt32(int32(mem)),
-		Publish:       &publish,
+		Publish:       publish,
 		Environment:   &lambdatypes.Environment{Variables: map[string]string{"POLICY_STORE_ID": psId}},
 	})
 	if err != nil {
@@ -352,6 +351,14 @@ func (r *authorizerResource) ImportState(_ context.Context, _ resource.ImportSta
 
 func awsString(s string) *string { return &s }
 func awsInt32(v int32) *int32    { return &v }
+
+// awsStringValue safely dereferences an AWS SDK *string, returning an empty string when nil.
+func awsStringValue(p *string) string {
+    if p == nil {
+        return ""
+    }
+    return *p
+}
 
 func strOrDefault(s string, def string) string {
 	if strings.TrimSpace(s) == "" {

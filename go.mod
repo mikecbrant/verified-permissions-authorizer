@@ -12,7 +12,7 @@ require (
 	github.com/aws/smithy-go v1.22.1
 	github.com/bmatcuk/doublestar/v4 v4.7.1
 	github.com/hashicorp/terraform-plugin-framework v1.10.0
-	github.com/hashicorp/terraform-plugin-testing v1.6.0
+	github.com/hashicorp/terraform-plugin-testing v1.7.0
 	github.com/pulumi/pulumi-aws/sdk/v6 v6.73.0
 	github.com/pulumi/pulumi-go-provider v1.1.1
 	github.com/pulumi/pulumi/sdk/v3 v3.169.0

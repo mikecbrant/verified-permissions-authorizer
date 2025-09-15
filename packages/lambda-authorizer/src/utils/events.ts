@@ -3,7 +3,9 @@ import type {
   AppSyncAuthorizerEvent,
 } from 'aws-lambda'
 
-type AnyAuthorizerEvent = APIGatewayRequestAuthorizerEvent | AppSyncAuthorizerEvent
+type AnyAuthorizerEvent =
+  | APIGatewayRequestAuthorizerEvent
+  | AppSyncAuthorizerEvent
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null
@@ -18,19 +20,19 @@ const isApiGatewayAuthorizerEvent = (
   return (
     typeof methodArn === 'string' &&
     typeof typ === 'string' &&
-    typeof headers === 'object' && headers !== null
+    typeof headers === 'object' &&
+    headers !== null
   )
 }
 
-const isAppSyncAuthorizerEvent = (event: unknown): event is AppSyncAuthorizerEvent => {
+const isAppSyncAuthorizerEvent = (
+  event: unknown,
+): event is AppSyncAuthorizerEvent => {
   if (!isRecord(event)) return false
   const authorizationToken = event['authorizationToken']
   const requestContext = event['requestContext']
   const apiId = isRecord(requestContext) ? requestContext['apiId'] : undefined
-  return (
-    typeof authorizationToken === 'string' &&
-    typeof apiId === 'string'
-  )
+  return typeof authorizationToken === 'string' && typeof apiId === 'string'
 }
 
 export type { AnyAuthorizerEvent }

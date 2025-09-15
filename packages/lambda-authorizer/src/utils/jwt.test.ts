@@ -24,14 +24,24 @@ describe('jwt utils', () => {
   })
 
   it('supports lower-case authorization header', () => {
-    const apiEv = { type: 'REQUEST', methodArn: 'arn', headers: { authorization: 'Bearer z' } }
+    const apiEv = {
+      type: 'REQUEST',
+      methodArn: 'arn',
+      headers: { authorization: 'Bearer z' },
+    }
     expect(getBearerToken(apiEv as any)).toBe('z')
   })
 
   it('verifies payload and enforces exp/nbf', async () => {
     const secret = 's'
-    const good = jwt.sign({ sub: 'u', exp: Math.floor(Date.now() / 1000) + 60 }, secret)
-    const bad = jwt.sign({ sub: 'u', exp: Math.floor(Date.now() / 1000) - 1 }, secret)
+    const good = jwt.sign(
+      { sub: 'u', exp: Math.floor(Date.now() / 1000) + 60 },
+      secret,
+    )
+    const bad = jwt.sign(
+      { sub: 'u', exp: Math.floor(Date.now() / 1000) - 1 },
+      secret,
+    )
     expect(parseJwtPayload(good, secret)?.sub).toBe('u')
     expect(parseJwtPayload(bad, secret)).toBeUndefined()
   })
@@ -48,7 +58,10 @@ describe('jwt utils', () => {
   })
 
   it('handles non-Bearer AppSync tokens by returning raw value', () => {
-    const ev = { authorizationToken: 'rawtoken', requestContext: { apiId: 'id' } }
+    const ev = {
+      authorizationToken: 'rawtoken',
+      requestContext: { apiId: 'id' },
+    }
     expect(getBearerToken(ev as any)).toBe('rawtoken')
   })
 

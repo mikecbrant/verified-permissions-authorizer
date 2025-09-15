@@ -1,0 +1,24 @@
+{
+  "ns": {
+    "entityTypes": {
+      "TenantGrant": {
+        "resourceEntities": {
+          "byTenantIdAndUserId": {
+            "id": "$tenantId:$userId",
+            "type": "TenantGrant"
+          }
+        },
+        "shape": { "type": "Record", "attributes": { "tenantId": { "type": "String" }, "userId": { "type": "String" } } }
+      }
+    },
+    "actions": {
+      "getTenantGrant": {
+        "memberOf": ["Get"],
+        "appliesTo": { "resourceTypes": ["TenantGrant"] },
+        "entityMap": { "TenantGrant": "MISSING_TEMPLATE_NAME" },
+        "input": { "rest": { "url": "/tenant-grant/:tenantId/:userId" } }
+      }
+    },
+    "mappings": { "actions": { "apiGateway": { "path": "requestContext.httpMethod" } } }
+  }
+}

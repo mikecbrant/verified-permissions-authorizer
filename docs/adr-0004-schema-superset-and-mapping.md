@@ -22,6 +22,7 @@ Decisions
 - Packaging and pruning
   - The full merged superset JSON is bundled alongside the Lambda (`schema.merged.json`) so the authorizer can resolve resource entities at runtime.
   - Before uploading the schema to AWS Verified Permissions, we prune all superset keys, producing Cedar‑only JSON. This avoids AVP schema rejections on unknown keys.
+  - Namespace input: the authorizer accepts a `namespace` input (same as the single namespace in user‑authored YAML). The provider enforces single‑namespace equality and writes this namespace as the single top‑level key in the final merged JSON. Because we don’t expose partial JSON, namespace is always included automatically in the bundled `schema.merged.json`.
 
 YAML shape (excerpt)
 ```yaml

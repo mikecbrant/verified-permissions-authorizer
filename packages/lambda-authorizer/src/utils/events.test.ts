@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { isApiGatewayAuthorizerEvent, isAppSyncAuthorizerEvent } from './events.js'
+import {
+  isApiGatewayAuthorizerEvent,
+  isAppSyncAuthorizerEvent,
+} from './events.js'
 
 describe('event type guards', () => {
   it('detects API Gateway Request Authorizer events', () => {

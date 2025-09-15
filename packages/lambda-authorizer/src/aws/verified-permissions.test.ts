@@ -12,7 +12,9 @@ describe('verified-permissions utilities', () => {
 
   it('isAuthorized delegates to client with IsAuthorizedCommand', async () => {
     const c = getClient()
-    const spy = vi.spyOn(c, 'send').mockResolvedValue({ decision: 'ALLOW' } as any)
+    const spy = vi
+      .spyOn(c, 'send')
+      .mockResolvedValue({ decision: 'ALLOW' } as any)
     const res = await isAuthorized({
       policyStoreId: 'ps',
       principal: { entityType: 'User', entityId: 'u' },

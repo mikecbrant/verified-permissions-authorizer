@@ -1,0 +1,22 @@
+ignorePatterns:
+  - '**/*.lock'
+  - '**/dist/**'
+  - '**/generated/**'
+checkCommands:
+  fix: gofmt -s -w . && pnpm format:write
+  lint: |
+    gofmt -d .
+    golangci-lint run ./...
+    pnpm -r format
+  types: pnpm -r typecheck
+  test: |
+    go build ./...
+    go vet ./...
+    go test ./... -coverprofile=coverage.out -covermode=count
+    pnpm -r test
+beta:
+  automaticallyReviewPullRequests: false
+  skipEmptyReviews: true
+  filterReviewComments: true
+  canApprovePullRequests: false
+  forceAllCheckCommands: false

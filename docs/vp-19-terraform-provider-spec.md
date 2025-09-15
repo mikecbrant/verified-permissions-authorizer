@@ -140,8 +140,8 @@ Open questions (tied to ADR)
 4. Packaging location: separate repo vs this monorepo (and how we share the built Lambda bundle during provider build).
 
 ## References to Pulumi provider (parity source of truth)
-- Inputs/outputs/types: `packages/provider/pkg/provider/provider.go`
-- AVP ingestion & validations: `packages/provider/pkg/provider/schema.go`
-- Guardrails & canary assets: `packages/provider/pkg/provider/policies.go`, `packages/provider/pkg/provider/canaries.go`
-- SES validation: `packages/provider/pkg/provider/ses_helpers.go`
+- Inputs/outputs/types: `internal/pulumi/provider.go`
+- AVP ingestion & validations: `internal/pulumi/schema.go`
+- Guardrails & canary assets: `internal/pulumi/policies.go` (guardrails) and `internal/common/canaries.go`
+- SES validation: `internal/pulumi/ses_helpers.go`
 

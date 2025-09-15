@@ -42,10 +42,33 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'packages/provider/go.mod'
+          go-version-file: 'go.mod'
 
-      - name: Go vet (lint)
-        run: pnpm go:lint
+      - name: Build Lambda (to embed)
+        run: pnpm --filter verified-permissions-lambda-authorizer build
+
+      - name: Copy built lambda into shared assets
+        run: |
+          mkdir -p internal/common/assets/lambda
+          cp packages/lambda-authorizer/dist/index.mjs internal/common/assets/lambda/index.mjs
+
+      - name: Setup Go for Terraform provider
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Go build (all packages)
+        run: |
+          go build ./...
+
+      - name: Go vet (stdlib vet)
+        run: go vet ./...
+
+      - name: Lint (golangci-lint)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m ./...
 
       - name: Unit tests (Go provider)
-        run: pnpm go:test
+        run: go test ./... -coverprofile=coverage.out -covermode=count

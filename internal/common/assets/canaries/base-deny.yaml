@@ -1,0 +1,5 @@
+cases:
+  - principal: { entityType: "User", entityId: "user:unknown" }
+    action: "GetTenant"
+    resource: { entityType: "Tenant", entityId: "tenant:foo" }
+    expect: "DENY"

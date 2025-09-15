@@ -1,0 +1,38 @@
+name: Terraform (Apply via TFC GitHub App)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/terraform/**'
+      - '.github/workflows/terraform-apply.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: latest
+
+      - name: Terraform fmt (check)
+        working-directory: infra/terraform
+        run: terraform fmt -check -diff
+
+      - name: Note
+        run: |
+          cat << 'MSG' >> $GITHUB_STEP_SUMMARY
+          Applies are performed by Terraform Cloud via the GitHub App VCS integration when commits land on main.
+          No TF_API_TOKEN or AWS credentials are used in GitHub Actions; the TFC workspace variables handle AWS access.
+          MSG

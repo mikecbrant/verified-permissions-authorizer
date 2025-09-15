@@ -20,18 +20,52 @@ Read the ADR for the full technical approach, assumptions, and integration guida
 - AWS region/credentials are inherited from the standard Pulumi AWS provider.
 - The provider is tightly coupled to the Lambda: changes to `packages/lambda-authorizer` cause a provider release.
 
-See `packages/provider/README.md`, `packages/lambda-authorizer/README.md`, and `packages/sdk/nodejs/` for package‑specific details.
+See `internal/pulumi/README.md`, `packages/lambda-authorizer/README.md`, and `packages/sdk/nodejs/` for package‑specific details.
 
 ### Compatibility
 - API Gateway (REST): Request authorizer mode only.
 - AppSync (GraphQL): Lambda authorizer supported.
 - API Gateway (HTTP APIs): not supported yet.
 
-## Monorepo packages
+## Monorepo layout (Go‑first)
 
-- `packages/provider`: the Go, bridged Pulumi Component Provider.
-- `packages/lambda-authorizer`: the TypeScript Lambda authorizer implementation used by the provider.
+- `internal/common`: shared AVP domain logic (schema/policy validation, canaries) and embedded assets.
+- `internal/common/ses`: SES config validation helpers.
+- `internal/awssdk`: small AWS SDK helpers (config, partition).
+- `internal/terraform`: Terraform provider (non‑main) logic.
+- `internal/pulumi`: Pulumi provider logic used by the bridged provider.
+- `cmd/terraform-provider-vpauthorizer`: Terraform provider binary entrypoint.
+- `infra/terraform`: Terraform examples.
+- `infra/pulumi`: Pulumi examples.
+- `internal/pulumi`: the Go, bridged Pulumi Component Provider (binary entrypoint under `cmd/pulumi-resource-verified-permissions-authorizer`; schema under `internal/pulumi/schema.json`).
+- `packages/lambda-authorizer`: the TypeScript Lambda authorizer implementation used by the providers.
 - `packages/sdk/nodejs`: the generated Node.js SDK published as `pulumi-verified-permissions-authorizer`.
+
+## Terraform provider (mikecbrant/vpauthorizer)
+
+Install via required_providers:
+
+```hcl
+terraform {
+  required_providers {
+    vpauthorizer = {
+      source  = "mikecbrant/vpauthorizer"
+      version = ">= 0.1.0"
+    }
+  }
+}
+
+provider "vpauthorizer" {}
+
+resource "vpauthorizer_authorizer" "main" {
+  verified_permissions {
+    schema_file = "../authorizer/schema.yaml"
+    policy_dir  = "../authorizer/policies"
+  }
+}
+```
+
+See docs under `internal/terraform/docs` and runnable examples under `infra/terraform`.
 
 For local pre‑PR checks (Go build/vet/test and workspace lint/type/tests), see [.charlie/preflight.md](.charlie/preflight.md).
 
@@ -58,4 +92,4 @@ Action group enforcement is exact and case-sensitive against the canonical group
 
 ## Additional compatibility note
 
-- Cognito + SES email is supported when `cognito.sesConfig` is provided via the provider inputs (see `packages/provider/README.md`).
+- Cognito + SES email is supported when `cognito.sesConfig` is provided via the provider inputs (see `internal/pulumi/README.md`).

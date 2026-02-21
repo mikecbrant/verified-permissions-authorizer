@@ -7,7 +7,7 @@ import promisePlugin from "eslint-plugin-promise";
 
 // Optionally include shared config when available. We spread `shared` first so local
 // rules/configs below take precedence when overlaps occur.
-let shared = [];
+let shared = []
 try {
   const m = await import("@mikecbrant/typescript-tooling/eslint/flat");
   shared = Array.isArray(m.default) ? m.default : [];

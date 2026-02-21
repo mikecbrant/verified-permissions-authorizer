@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+
 	"github.com/mikecbrant/verified-permissions-authorizer/internal/utils/logging"
 )
 
@@ -15,7 +16,8 @@ type FakeDynamoTxnClient struct {
 	Err error
 }
 
-func (f *FakeDynamoTxnClient) TransactWriteItems(ctx context.Context, in *dynamodb.TransactWriteItemsInput, _ ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) {
+// TransactWriteItems records the input and returns the configured error.
+func (f *FakeDynamoTxnClient) TransactWriteItems(_ context.Context, in *dynamodb.TransactWriteItemsInput, _ ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) {
 	f.In = in
 	return &dynamodb.TransactWriteItemsOutput{}, f.Err
 }
@@ -26,9 +28,14 @@ type BufferLogger struct {
 	Entries []string
 }
 
+// Debug records a debug-level log entry.
 func (l *BufferLogger) Debug(msg string, ctx logging.Fields) { l.record("debug", msg, ctx) }
-func (l *BufferLogger) Info(msg string, ctx logging.Fields)  { l.record("info", msg, ctx) }
-func (l *BufferLogger) Warn(msg string, ctx logging.Fields)  { l.record("warn", msg, ctx) }
+
+// Info records an info-level log entry.
+func (l *BufferLogger) Info(msg string, ctx logging.Fields) { l.record("info", msg, ctx) }
+
+// Warn records a warn-level log entry.
+func (l *BufferLogger) Warn(msg string, ctx logging.Fields) { l.record("warn", msg, ctx) }
 
 func (l *BufferLogger) record(level, msg string, ctx logging.Fields) {
 	l.Calls = append(l.Calls, level)

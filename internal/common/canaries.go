@@ -9,8 +9,9 @@ import (
 
 	vpapi "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
 	vpapiTypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
-	"github.com/mikecbrant/verified-permissions-authorizer/internal/awssdk"
 	"gopkg.in/yaml.v3"
+
+	"github.com/mikecbrant/verified-permissions-authorizer/internal/awssdk"
 )
 
 //go:embed assets/canaries/*.yaml
@@ -22,8 +23,29 @@ type yamlCase struct {
 	Resource  map[string]string `yaml:"resource"`
 	Expect    string            `yaml:"expect"`
 }
+
 type canaryDoc struct {
 	Cases []yamlCase `yaml:"cases"`
+}
+
+type canaryCase struct {
+	PrincipalType string
+	PrincipalId   string
+	Action        string
+	ResourceType  string
+	ResourceId    string
+	Expect        string
+}
+
+func toCanaryCase(c yamlCase) canaryCase {
+	return canaryCase{
+		PrincipalType: c.Principal["entityType"],
+		PrincipalId:   c.Principal["entityId"],
+		Action:        c.Action,
+		ResourceType:  c.Resource["entityType"],
+		ResourceId:    c.Resource["entityId"],
+		Expect:        c.Expect,
+	}
 }
 
 // RunCombinedCanaries merges provider-resident canaries with an optional consumer canary file
@@ -36,52 +58,9 @@ func RunCombinedCanaries(ctx context.Context, region string, policyStoreId strin
 	}
 	client := vpapi.NewFromConfig(cfg)
 
-	type canaryCase struct {
-		PrincipalType string
-		PrincipalId   string
-		Action        string
-		ResourceType  string
-		ResourceId    string
-		Expect        string
-	}
-	toCase := func(c yamlCase) canaryCase {
-		return canaryCase{
-			PrincipalType: c.Principal["entityType"],
-			PrincipalId:   c.Principal["entityId"],
-			Action:        c.Action,
-			ResourceType:  c.Resource["entityType"],
-			ResourceId:    c.Resource["entityId"],
-			Expect:        c.Expect,
-		}
-	}
-
-	var allCases []canaryCase
-	if b, err := os.ReadFile(consumerPath); err == nil {
-		var doc canaryDoc
-		if err := yaml.Unmarshal(b, &doc); err != nil {
-			return fmt.Errorf("invalid canary YAML %s: %w", consumerPath, err)
-		}
-		for _, c := range doc.Cases {
-			allCases = append(allCases, toCase(c))
-		}
-	}
-	if b, err := canaryFS.ReadFile("assets/canaries/base-deny.yaml"); err == nil {
-		var doc canaryDoc
-		if err := yaml.Unmarshal(b, &doc); err == nil {
-			for _, c := range doc.Cases {
-				allCases = append(allCases, toCase(c))
-			}
-		}
-	}
-	if !strings.EqualFold(agMode, "off") {
-		if b, err := canaryFS.ReadFile("assets/canaries/action-enforcement.yaml"); err == nil {
-			var doc canaryDoc
-			if err := yaml.Unmarshal(b, &doc); err == nil {
-				for _, c := range doc.Cases {
-					allCases = append(allCases, toCase(c))
-				}
-			}
-		}
+	allCases, err := loadCanaryCases(consumerPath, agMode)
+	if err != nil {
+		return err
 	}
 	if len(allCases) == 0 {
 		return nil
@@ -106,4 +85,51 @@ func RunCombinedCanaries(ctx context.Context, region string, policyStoreId strin
 		}
 	}
 	return nil
+}
+
+func loadCanaryCases(consumerPath string, agMode string) ([]canaryCase, error) {
+	allCases := []canaryCase{}
+	if b, err := os.ReadFile(consumerPath); err == nil {
+		doc, err := readCanaryDoc(b, consumerPath)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range doc.Cases {
+			allCases = append(allCases, toCanaryCase(c))
+		}
+	}
+
+	baseCases := readEmbeddedCanaryCases("assets/canaries/base-deny.yaml")
+	allCases = append(allCases, baseCases...)
+
+	if !strings.EqualFold(agMode, "off") {
+		agCases := readEmbeddedCanaryCases("assets/canaries/action-enforcement.yaml")
+		allCases = append(allCases, agCases...)
+	}
+
+	return allCases, nil
+}
+
+func readEmbeddedCanaryCases(assetPath string) []canaryCase {
+	b, err := canaryFS.ReadFile(assetPath)
+	if err != nil {
+		return nil
+	}
+	doc, err := readCanaryDoc(b, assetPath)
+	if err != nil {
+		return nil
+	}
+	cases := make([]canaryCase, 0, len(doc.Cases))
+	for _, c := range doc.Cases {
+		cases = append(cases, toCanaryCase(c))
+	}
+	return cases
+}
+
+func readCanaryDoc(b []byte, src string) (canaryDoc, error) {
+	var doc canaryDoc
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return canaryDoc{}, fmt.Errorf("invalid canary YAML %s: %w", src, err)
+	}
+	return doc, nil
 }

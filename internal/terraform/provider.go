@@ -36,7 +36,7 @@ func (p *vpaProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *
 	}
 }
 
-func (p *vpaProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
+func (p *vpaProvider) Configure(_ context.Context, _ provider.ConfigureRequest, _ *provider.ConfigureResponse) {
 	// Nothing; AWS config is discovered via default chain in the resource implementation
 }
 

@@ -99,37 +99,31 @@ func loadCanaryCases(consumerPath string, agMode string) ([]canaryCase, error) {
 		}
 	}
 
-	baseCases, err := readEmbeddedCanaryCases("assets/canaries/base-deny.yaml")
-	if err != nil {
-		return nil, err
-	}
+	baseCases := readEmbeddedCanaryCases("assets/canaries/base-deny.yaml")
 	allCases = append(allCases, baseCases...)
 
 	if !strings.EqualFold(agMode, "off") {
-		agCases, err := readEmbeddedCanaryCases("assets/canaries/action-enforcement.yaml")
-		if err != nil {
-			return nil, err
-		}
+		agCases := readEmbeddedCanaryCases("assets/canaries/action-enforcement.yaml")
 		allCases = append(allCases, agCases...)
 	}
 
 	return allCases, nil
 }
 
-func readEmbeddedCanaryCases(assetPath string) ([]canaryCase, error) {
+func readEmbeddedCanaryCases(assetPath string) []canaryCase {
 	b, err := canaryFS.ReadFile(assetPath)
 	if err != nil {
-		return nil, nil
+		return nil
 	}
 	doc, err := readCanaryDoc(b, assetPath)
 	if err != nil {
-		return nil, nil
+		return nil
 	}
 	cases := make([]canaryCase, 0, len(doc.Cases))
 	for _, c := range doc.Cases {
 		cases = append(cases, toCanaryCase(c))
 	}
-	return cases, nil
+	return cases
 }
 
 func readCanaryDoc(b []byte, src string) (canaryDoc, error) {

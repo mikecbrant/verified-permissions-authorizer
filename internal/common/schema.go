@@ -134,7 +134,7 @@ func collectActionNames(body map[string]any) ([]string, error) {
 	}
 	amap, ok := aRaw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("actions must be an object of action definitions")
+		return acts, nil
 	}
 	for name := range amap {
 		acts = append(acts, name)

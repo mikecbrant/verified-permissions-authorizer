@@ -2,9 +2,13 @@ package dynamo
 
 import "fmt"
 
-// Role keys
+// RoleScopePK returns the partition key for a role record scoped to a tenant.
 func RoleScopePK(scope string) string { return fmt.Sprintf("ROLE_SCOPE#%s", scope) }
-func RoleNameSK(name string) string   { return fmt.Sprintf("ROLE_NAME#%s", name) }
+
+// RoleNameSK returns the sort key for a role record scoped to a tenant.
+func RoleNameSK(name string) string { return fmt.Sprintf("ROLE_NAME#%s", name) }
+
+// RoleIdGSI returns the (GSI1PK, GSI1SK) pair for looking up a role by id.
 func RoleIdGSI(roleId string) (string, string) {
 	v := fmt.Sprintf("ROLE#%s", roleId)
 	return v, v

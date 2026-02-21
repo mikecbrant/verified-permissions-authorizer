@@ -2,11 +2,19 @@ package dynamo
 
 import "fmt"
 
-// TenantGrant keys (membership row: tenants ↔ users)
-func TenantGrantPK(tenantId string) string     { return TenantPK(tenantId) }
-func TenantGrantSK(userId string) string       { return UserSK(userId) }
-func TenantGrantGSI1PK(userId string) string   { return UserPK(userId) }
+// TenantGrantPK returns the partition key for a tenant membership record.
+func TenantGrantPK(tenantId string) string { return TenantPK(tenantId) }
+
+// TenantGrantSK returns the sort key for a tenant membership record.
+func TenantGrantSK(userId string) string { return UserSK(userId) }
+
+// TenantGrantGSI1PK returns the GSI1 partition key for a reverse lookup (user -> tenants).
+func TenantGrantGSI1PK(userId string) string { return UserPK(userId) }
+
+// TenantGrantGSI1SK returns the GSI1 sort key for a reverse lookup (user -> tenants).
 func TenantGrantGSI1SK(tenantId string) string { return TenantPK(tenantId) }
+
+// TenantGrantIdGSI returns the (GSI2PK, GSI2SK) pair for looking up a tenant grant by id.
 func TenantGrantIdGSI(id string) (string, string) {
 	v := fmt.Sprintf("TENANT_GRANT#%s", id)
 	return v, v

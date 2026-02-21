@@ -12,65 +12,108 @@ import (
 
 	vpapi "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
 	vpapiTypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
+	"gopkg.in/yaml.v3"
+
 	"github.com/mikecbrant/verified-permissions-authorizer/internal/awssdk"
 	"github.com/mikecbrant/verified-permissions-authorizer/internal/utils"
-	"gopkg.in/yaml.v3"
 )
+
+var namespaceNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]+$`)
+
+var requiredPrincipals = []string{"Tenant", "User", "Role", "GlobalRole", "TenantGrant"}
 
 // LoadAndValidateSchema parses a YAML/JSON Verified Permissions schema definition and returns
 // canonical JSON (minified), the namespace name, the set of action names, and any warnings.
 func LoadAndValidateSchema(schemaPath string) (cedarJSON string, namespace string, actions []string, warnings []string, err error) {
+	doc, err := loadSchemaDocument(schemaPath)
+	if err != nil {
+		return "", "", nil, nil, err
+	}
+
+	top, ns, body, err := extractSingleNamespace(doc)
+	if err != nil {
+		return "", "", nil, nil, err
+	}
+
+	warnings = namespaceWarnings(ns)
+
+	acts, err := collectActionNames(body)
+	if err != nil {
+		return "", "", nil, nil, err
+	}
+
+	if err := validateRequiredPrincipals(ns, body); err != nil {
+		return "", "", nil, nil, err
+	}
+
+	cedarJSON, err = canonicalizeSchema(top)
+	if err != nil {
+		return "", "", nil, nil, err
+	}
+
+	return cedarJSON, ns, acts, warnings, nil
+}
+
+func loadSchemaDocument(schemaPath string) (any, error) {
 	raw, err := os.ReadFile(schemaPath)
 	if err != nil {
-		return "", "", nil, nil, fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
+		return nil, fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
 	}
+
 	var doc any
 	switch strings.ToLower(filepath.Ext(schemaPath)) {
 	case ".yaml", ".yml":
 		if err := yaml.Unmarshal(raw, &doc); err != nil {
-			return "", "", nil, nil, fmt.Errorf("invalid YAML in %s: %w", schemaPath, err)
+			return nil, fmt.Errorf("invalid YAML in %s: %w", schemaPath, err)
 		}
 	case ".json":
 		if err := json.Unmarshal(raw, &doc); err != nil {
-			return "", "", nil, nil, fmt.Errorf("invalid JSON in %s: %w", schemaPath, err)
+			return nil, fmt.Errorf("invalid JSON in %s: %w", schemaPath, err)
 		}
 	default:
-		return "", "", nil, nil, fmt.Errorf("unsupported schema extension %q; expected .yaml, .yml, or .json", filepath.Ext(schemaPath))
+		return nil, fmt.Errorf("unsupported schema extension %q; expected .yaml, .yml, or .json", filepath.Ext(schemaPath))
 	}
+
+	return doc, nil
+}
+
+func extractSingleNamespace(doc any) (top map[string]any, ns string, body map[string]any, err error) {
 	// Expect single namespace object
 	top, ok := doc.(map[string]any)
 	if !ok {
-		return "", "", nil, nil, fmt.Errorf("schema must be a mapping of namespace → {entityTypes, actions}")
+		return nil, "", nil, fmt.Errorf("schema must be a mapping of namespace → {entityTypes, actions}")
 	}
 	if len(top) != 1 {
-		return "", "", nil, nil, fmt.Errorf("AVP supports a single namespace per schema; found %d namespaces", len(top))
+		return nil, "", nil, fmt.Errorf("AVP supports a single namespace per schema; found %d namespaces", len(top))
 	}
-	var ns string
-	var body any
 	for k, v := range top {
 		ns = k
-		body = v
-		break
+		b, ok := v.(map[string]any)
+		if !ok {
+			return nil, "", nil, fmt.Errorf("schema namespace %q must map to an object", ns)
+		}
+		return top, ns, b, nil
 	}
-	// Namespace warning for non-kebab-case (warning only; provider may elevate this to error)
-	re := regexp.MustCompile(`^[a-z0-9][a-z0-9-]+$`)
-	if !re.MatchString(ns) {
-		warnings = append(warnings, fmt.Sprintf("namespace %q is non-standard; consider simple kebab-case", ns))
+	return nil, "", nil, fmt.Errorf("schema must contain exactly one namespace")
+}
+
+func namespaceWarnings(ns string) []string {
+	// Warning only; provider may elevate this to error.
+	if namespaceNameRe.MatchString(ns) {
+		return nil
 	}
-	// Required principals
-	bmap, ok := body.(map[string]any)
+	return []string{fmt.Sprintf("namespace %q is non-standard; consider simple kebab-case", ns)}
+}
+
+func validateRequiredPrincipals(ns string, body map[string]any) error {
+	etRaw, ok := body["entityTypes"]
 	if !ok {
-		return "", "", nil, nil, fmt.Errorf("schema namespace %q must map to an object", ns)
-	}
-	etRaw, ok := bmap["entityTypes"]
-	if !ok {
-		return "", "", nil, nil, fmt.Errorf("schema namespace %q must define entityTypes", ns)
+		return fmt.Errorf("schema namespace %q must define entityTypes", ns)
 	}
 	et, ok := etRaw.(map[string]any)
 	if !ok {
-		return "", "", nil, nil, fmt.Errorf("entityTypes must be an object of entity type definitions")
+		return fmt.Errorf("entityTypes must be an object of entity type definitions")
 	}
-	requiredPrincipals := []string{"Tenant", "User", "Role", "GlobalRole", "TenantGrant"}
 	missing := []string{}
 	for _, r := range requiredPrincipals {
 		if _, ok := et[r]; !ok {
@@ -78,26 +121,36 @@ func LoadAndValidateSchema(schemaPath string) (cedarJSON string, namespace strin
 		}
 	}
 	if len(missing) > 0 {
-		return "", "", nil, nil, fmt.Errorf("schema namespace %q missing required principal entity types: %s", ns, strings.Join(missing, ", "))
+		return fmt.Errorf("schema namespace %q missing required principal entity types: %s", ns, strings.Join(missing, ", "))
 	}
-	// Collect action names
+	return nil
+}
+
+func collectActionNames(body map[string]any) ([]string, error) {
 	acts := []string{}
-	if aRaw, ok := bmap["actions"]; ok {
-		if amap, ok := aRaw.(map[string]any); ok {
-			for name := range amap {
-				acts = append(acts, name)
-			}
-		}
+	aRaw, ok := body["actions"]
+	if !ok {
+		return acts, nil
 	}
-	// Canonical JSON
+	amap, ok := aRaw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("actions must be an object of action definitions")
+	}
+	for name := range amap {
+		acts = append(acts, name)
+	}
+	return acts, nil
+}
+
+func canonicalizeSchema(top map[string]any) (string, error) {
 	b, err := json.Marshal(top)
 	if err != nil {
-		return "", "", nil, nil, fmt.Errorf("failed to encode schema as JSON: %w", err)
+		return "", fmt.Errorf("failed to encode schema as JSON: %w", err)
 	}
 	if sz := len(b); sz > 100000 {
-		return "", "", nil, nil, fmt.Errorf("schema JSON size %d exceeds 100,000 byte limit", sz)
+		return "", fmt.Errorf("schema JSON size %d exceeds 100,000 byte limit", sz)
 	}
-	return string(b), ns, acts, warnings, nil
+	return string(b), nil
 }
 
 // Canonical action group identifiers (PascalCase + Global* variants)

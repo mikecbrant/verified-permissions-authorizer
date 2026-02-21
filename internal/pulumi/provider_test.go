@@ -22,13 +22,15 @@ type testMocks struct {
 	resources []capturedResource
 }
 
+const cognitoUserPoolTypeToken = "aws:cognito/userPool:UserPool"
+
 func (m *testMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.PropertyMap, error) {
 	// Capture the resource
 	m.resources = append(m.resources, capturedResource{Type: args.TypeToken, Name: args.Name, Inputs: args.Inputs})
 	// Echo inputs as outputs; synthesize an ID
 	id := args.Name + "_id"
 	out := args.Inputs
-	if args.TypeToken == "aws:cognito/userPool:UserPool" {
+	if args.TypeToken == cognitoUserPoolTypeToken {
 		out = out.Copy()
 		out[resource.PropertyKey("arn")] = resource.NewStringProperty(
 			fmt.Sprintf("arn:aws:cognito-idp:%s:123456789012:userpool/%s", m.region, id),
@@ -77,7 +79,7 @@ func TestCognito_DefaultNoSesConfig(t *testing.T) {
 	}
 	var up resource.PropertyMap
 	for _, r := range mocks.resources {
-		if r.Type == "aws:cognito/userPool:UserPool" {
+		if r.Type == cognitoUserPoolTypeToken {
 			up = r.Inputs
 		}
 		if r.Type == "aws:sesv2/emailIdentityPolicy:EmailIdentityPolicy" {
@@ -112,37 +114,9 @@ func TestCognito_WithSesConfig_ConfiguresEmailAndPolicy(t *testing.T) {
 		t.Fatalf("run failed: %v", err)
 	}
 
-	var up resource.PropertyMap
-	var seenPolicy bool
-	var policyBody string
-	for _, r := range mocks.resources {
-		switch r.Type {
-		case "aws:cognito/userPool:UserPool":
-			up = r.Inputs
-		case "aws:sesv2/emailIdentityPolicy:EmailIdentityPolicy":
-			seenPolicy = true
-			// Policy is provided as 'policy' input
-			if p, ok := r.Inputs[resource.PropertyKey("policy")]; ok {
-				if p.IsString() {
-					policyBody = p.StringValue()
-				}
-				if p.IsOutput() {
-					out := p.OutputValue()
-					if out.Known && out.Element.IsString() {
-						policyBody = out.Element.StringValue()
-					}
-				}
-			}
-			// Email identity should be the identity name, not the ARN
-			if ei, ok := r.Inputs[resource.PropertyKey("emailIdentity")]; ok {
-				if ei.StringValue() != "example.com" {
-					t.Fatalf("unexpected emailIdentity: %s", ei.StringValue())
-				}
-			} else {
-				t.Fatalf("emailIdentity not set on SES identity policy")
-			}
-		}
-	}
+	up := findResourceInputs(mocks.resources, cognitoUserPoolTypeToken)
+	policyInputs := findResourceInputs(mocks.resources, "aws:sesv2/emailIdentityPolicy:EmailIdentityPolicy")
+	policyBody := extractPolicyBody(policyInputs)
 	if up == nil {
 		t.Fatalf("user pool not created")
 	}
@@ -167,12 +141,53 @@ func TestCognito_WithSesConfig_ConfiguresEmailAndPolicy(t *testing.T) {
 	if got := ecm[resource.PropertyKey("configurationSet")].StringValue(); got != "prod" {
 		t.Fatalf("configurationSet mismatch: %s", got)
 	}
-	if !seenPolicy {
+	if policyInputs == nil {
 		t.Fatalf("SES identity policy not created")
 	}
+	assertEmailIdentity(t, policyInputs, "example.com")
 	// Assert policy JSON mentions the constructed user pool ARN (based on mocked region + synthesized ID)
 	if !strings.Contains(policyBody, "cognito-idp:us-east-1:123456789012:userpool/test-userpool_id") {
 		t.Fatalf("policy does not reference expected user pool ARN; got: %s", policyBody)
+	}
+}
+
+func findResourceInputs(resources []capturedResource, typeToken string) resource.PropertyMap {
+	for _, r := range resources {
+		if r.Type == typeToken {
+			return r.Inputs
+		}
+	}
+	return nil
+}
+
+func extractPolicyBody(inputs resource.PropertyMap) string {
+	if inputs == nil {
+		return ""
+	}
+	p, ok := inputs[resource.PropertyKey("policy")]
+	if !ok {
+		return ""
+	}
+	if p.IsString() {
+		return p.StringValue()
+	}
+	if p.IsOutput() {
+		out := p.OutputValue()
+		if out.Known && out.Element.IsString() {
+			return out.Element.StringValue()
+		}
+	}
+	return ""
+}
+
+func assertEmailIdentity(t *testing.T, inputs resource.PropertyMap, want string) {
+	t.Helper()
+	ei, ok := inputs[resource.PropertyKey("emailIdentity")]
+	if !ok {
+		t.Fatalf("emailIdentity not set on SES identity policy")
+	}
+	if got := ei.StringValue(); got != want {
+		t.Fatalf("unexpected emailIdentity: %s", got)
 	}
 }
 

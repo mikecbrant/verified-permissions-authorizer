@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/aws/smithy-go"
+
 	awserrors "github.com/mikecbrant/verified-permissions-authorizer/internal/awssdk/errors"
 	"github.com/mikecbrant/verified-permissions-authorizer/internal/awssdk/internal/testutil"
 )

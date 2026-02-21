@@ -2,9 +2,13 @@ package dynamo
 
 import "fmt"
 
-// Policy keys (static policy metadata)
-func PolicyPK() string                { return "GLOBAL" }
+// PolicyPK returns the partition key for policy metadata rows.
+func PolicyPK() string { return "GLOBAL" }
+
+// PolicyNameSK returns the sort key for policy metadata rows keyed by name.
 func PolicyNameSK(name string) string { return fmt.Sprintf("POLICY_NAME#%s", name) }
+
+// PolicyIdGSI returns the (GSI1PK, GSI1SK) pair for looking up a policy by id.
 func PolicyIdGSI(id string) (string, string) {
 	v := fmt.Sprintf("POLICY#%s", id)
 	return v, v

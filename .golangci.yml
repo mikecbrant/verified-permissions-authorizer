@@ -39,7 +39,7 @@ linters-settings:
         severity: warning
         disabled: false
       - name: var-naming
-        arguments: ["ID", "URL", "JSON"]
+        arguments: [["ID", "URL", "JSON"]]
       - name: receiver-naming
       - name: errorf
       - name: if-return

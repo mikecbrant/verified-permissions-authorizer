@@ -112,9 +112,7 @@ func prefixAll(prefix string, ins []string) []string {
 
 func warnAll(ctx *pulumi.Context, msgs []string) error {
 	for _, msg := range msgs {
-		if err := ctx.Log.Warn(msg, &pulumi.LogArgs{}); err != nil {
-			return err
-		}
+		_ = ctx.Log.Warn(msg, &pulumi.LogArgs{})
 	}
 	return nil
 }
@@ -131,9 +129,7 @@ func enforceActionGroups(ctx *pulumi.Context, actions []string, cfg VerifiedPerm
 			canonicalActionGroups,
 			strings.Join(violations, ", "),
 		)
-		if err := ctx.Log.Warn(msg, &pulumi.LogArgs{}); err != nil {
-			return "", err
-		}
+		_ = ctx.Log.Warn(msg, &pulumi.LogArgs{})
 	}
 	return agMode, nil
 }
@@ -150,9 +146,7 @@ func applySchemaIfChanged(ctx *pulumi.Context, store *awsvp.PolicyStore, cedarJS
 		if err := sharedavp.PutSchemaIfChanged(ctx.Context(), id, cedarJSON, regionName); err != nil {
 			return "", err
 		}
-		if err := ctx.Log.Info(fmt.Sprintf("AVP: schema applied for namespace %q (no-op when unchanged)", ns), &pulumi.LogArgs{}); err != nil {
-			return "", err
-		}
+		_ = ctx.Log.Info(fmt.Sprintf("AVP: schema applied for namespace %q (no-op when unchanged)", ns), &pulumi.LogArgs{})
 		return "ok", nil
 	}).(pulumi.StringOutput)
 }
@@ -164,9 +158,7 @@ func collectPolicyFiles(ctx *pulumi.Context, policyDir string) ([]string, error)
 	}
 	sort.Strings(files)
 	if len(files) == 0 {
-		if err := ctx.Log.Warn(fmt.Sprintf("AVP: no .cedar policy files found under %s", policyDir), &pulumi.LogArgs{}); err != nil {
-			return nil, err
-		}
+		_ = ctx.Log.Warn(fmt.Sprintf("AVP: no .cedar policy files found under %s", policyDir), &pulumi.LogArgs{})
 	}
 	return files, nil
 }
@@ -177,7 +169,8 @@ func maybeInstallGuardrails(ctx *pulumi.Context, name string, store *awsvp.Polic
 		disableGuardrails = *cfg.DisableGuardrails
 	}
 	if disableGuardrails {
-		return ctx.Log.Warn("Guardrails disabled: provider will not install deny guardrail policies", &pulumi.LogArgs{})
+		_ = ctx.Log.Warn("Guardrails disabled: provider will not install deny guardrail policies", &pulumi.LogArgs{})
+		return nil
 	}
 	return installGuardrails(ctx, name, store, schemaApplied, ns, agMode)
 }

@@ -162,6 +162,9 @@ func NewAuthorizerWithPolicyStore(
 	return comp, nil
 }
 
+// normalizeAuthorizerArgs applies defaults and initializes nested configs.
+//
+// Call this before passing args to helper functions.
 func normalizeAuthorizerArgs(args *AuthorizerArgs) {
 	if args.RetainOnDelete == nil {
 		b := false

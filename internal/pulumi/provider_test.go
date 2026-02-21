@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -25,7 +26,15 @@ func (m *testMocks) NewResource(args pulumi.MockResourceArgs) (string, resource.
 	// Capture the resource
 	m.resources = append(m.resources, capturedResource{Type: args.TypeToken, Name: args.Name, Inputs: args.Inputs})
 	// Echo inputs as outputs; synthesize an ID
-	return args.Name + "_id", args.Inputs, nil
+	id := args.Name + "_id"
+	out := args.Inputs
+	if args.TypeToken == "aws:cognito/userPool:UserPool" {
+		out = out.Copy()
+		out[resource.PropertyKey("arn")] = resource.NewStringProperty(
+			fmt.Sprintf("arn:aws:cognito-idp:%s:123456789012:userpool/%s", m.region, id),
+		)
+	}
+	return id, out, nil
 }
 
 func (m *testMocks) Call(args pulumi.MockCallArgs) (resource.PropertyMap, error) {
@@ -114,7 +123,15 @@ func TestCognito_WithSesConfig_ConfiguresEmailAndPolicy(t *testing.T) {
 			seenPolicy = true
 			// Policy is provided as 'policy' input
 			if p, ok := r.Inputs[resource.PropertyKey("policy")]; ok {
-				policyBody = p.StringValue()
+				if p.IsString() {
+					policyBody = p.StringValue()
+				}
+				if p.IsOutput() {
+					out := p.OutputValue()
+					if out.Known && out.Element.IsString() {
+						policyBody = out.Element.StringValue()
+					}
+				}
 			}
 			// Email identity should be the identity name, not the ARN
 			if ei, ok := r.Inputs[resource.PropertyKey("emailIdentity")]; ok {

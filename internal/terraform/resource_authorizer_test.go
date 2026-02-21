@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	tftest "github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
@@ -21,8 +23,8 @@ resource "vpauthorizer_authorizer" "test" {
 }
 `
 	tftest.Test(t, tftest.TestCase{
-		ProtoV6ProviderFactories: map[string]func() (any, error){
-			"vpauthorizer": func() (any, error) { return New("dev")(), nil },
+		ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
+			"vpauthorizer": providerserver.NewProtocol6WithError(New("dev")()),
 		},
 		Steps: []tftest.TestStep{{
 			Config: cfg,

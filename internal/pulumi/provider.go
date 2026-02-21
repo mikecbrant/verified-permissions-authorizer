@@ -276,19 +276,24 @@ func NewAuthorizerWithPolicyStore(
 			}
 			// SES policy to allow Cognito to send from identity
 			identityName := identity // identity name or domain (not the ARN)
-			pol := map[string]any{
-				"Version": "2012-10-17",
-				"Statement": []map[string]any{{
-					"Effect":    "Allow",
-					"Action":    []string{"ses:SendEmail", "ses:SendRawEmail"},
-					"Principal": map[string]any{"Service": "cognito-idp.amazonaws.com"},
-					"Resource":  fmt.Sprintf("arn:%s:ses:%s:%s:identity/%s", partitionForRegion(identityRegion), identityRegion, account, identityName),
-					"Condition": map[string]any{"StringEquals": map[string]any{"AWS:SourceArn": up.Arn}},
-				}},
-			}
-			b, _ := json.Marshal(pol)
+			policy := up.Arn.ApplyT(func(userPoolArn string) string {
+				pol := map[string]any{
+					"Version": "2012-10-17",
+					"Statement": []map[string]any{{
+						"Effect":    "Allow",
+						"Action":    []string{"ses:SendEmail", "ses:SendRawEmail"},
+						"Principal": map[string]any{"Service": "cognito-idp.amazonaws.com"},
+						"Resource":  fmt.Sprintf("arn:%s:ses:%s:%s:identity/%s", partitionForRegion(identityRegion), identityRegion, account, identityName),
+						"Condition": map[string]any{"StringEquals": map[string]any{"AWS:SourceArn": userPoolArn}},
+					}},
+				}
+				b, _ := json.Marshal(pol)
+				return string(b)
+			}).(pulumi.StringOutput)
 			_, err = awssesv2.NewEmailIdentityPolicy(ctx, fmt.Sprintf("%s-ses-policy", name), &awssesv2.EmailIdentityPolicyArgs{
-				EmailIdentity: pulumi.String(identityName), Policy: pulumi.String(string(b)),
+				EmailIdentity: pulumi.String(identityName),
+				Policy:        policy,
+				PolicyName:    pulumi.String(fmt.Sprintf("%s-cognito-send", name)),
 			}, childOpts...)
 			if err != nil {
 				return nil, err

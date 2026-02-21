@@ -46,7 +46,7 @@ func LoadAndValidateSchema(schemaPath string) (cedarJSON string, namespace strin
 		return "", "", nil, nil, err
 	}
 
-	cedarJSON, err = canonicalizeSchema(top)
+	cedarJSON, err = canonicalizeSchema(ns, top)
 	if err != nil {
 		return "", "", nil, nil, err
 	}
@@ -142,13 +142,13 @@ func collectActionNames(body map[string]any) ([]string, error) {
 	return acts, nil
 }
 
-func canonicalizeSchema(top map[string]any) (string, error) {
+func canonicalizeSchema(ns string, top map[string]any) (string, error) {
 	b, err := json.Marshal(top)
 	if err != nil {
-		return "", fmt.Errorf("failed to encode schema as JSON: %w", err)
+		return "", fmt.Errorf("failed to encode schema for namespace %q as JSON: %w", ns, err)
 	}
 	if sz := len(b); sz > 100000 {
-		return "", fmt.Errorf("schema JSON size %d exceeds 100,000 byte limit", sz)
+		return "", fmt.Errorf("schema JSON size %d exceeds 100,000 byte limit for namespace %q", sz, ns)
 	}
 	return string(b), nil
 }

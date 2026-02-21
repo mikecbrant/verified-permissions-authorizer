@@ -267,10 +267,10 @@ func createAndDescribeDynamoTable(ctx context.Context, client *dynamodb.Client) 
 	}
 	desc, err := client.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: &tableName})
 	if err != nil {
-		return "", "", fmt.Errorf("describe table failed: %w", err)
+		return "", "", fmt.Errorf("describe table failed for %s: %w", tableName, err)
 	}
 	if desc.Table == nil || desc.Table.TableArn == nil {
-		return "", "", fmt.Errorf("describe table missing TableArn")
+		return "", "", fmt.Errorf("describe table missing TableArn for %s", tableName)
 	}
 	return tableName, *desc.Table.TableArn, nil
 }
@@ -385,7 +385,7 @@ func resolveVerifiedPermissionsPaths(cfg *VerifiedPermissionsBlock) (schemaPath 
 		policyDir = filepath.Join(cwd, policyDir)
 	}
 	if st, err := os.Stat(policyDir); err != nil || !st.IsDir() {
-		return "", "", fmt.Errorf("%q not found or not a directory", policyDir)
+		return "", "", fmt.Errorf("verified_permissions.policy_dir %q not found or not a directory", policyDir)
 	}
 	return schemaPath, policyDir, nil
 }

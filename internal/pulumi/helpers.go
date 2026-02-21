@@ -1,35 +1,8 @@
 package provider
 
 import (
-	"io/fs"
-	"path/filepath"
-
-	ds "github.com/bmatcuk/doublestar/v4"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
-
-// globRecursive implements a simple recursive glob: base + pattern (supports **).
-func globRecursive(base, pattern string) ([]string, error) {
-	matches := []string{}
-	err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, _ := filepath.Rel(base, path)
-		ok, err := ds.PathMatch(pattern, rel)
-		if err != nil {
-			return err
-		}
-		if ok {
-			matches = append(matches, path)
-		}
-		return nil
-	})
-	return matches, err
-}
 
 func toOutputs(ins []pulumi.StringOutput) []pulumi.Output {
 	outs := make([]pulumi.Output, 0, len(ins))

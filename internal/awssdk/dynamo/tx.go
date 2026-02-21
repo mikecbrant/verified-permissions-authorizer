@@ -6,6 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	awserrors "github.com/mikecbrant/verified-permissions-authorizer/internal/awssdk/errors"
 	"github.com/mikecbrant/verified-permissions-authorizer/internal/utils/logging"
 )

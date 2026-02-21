@@ -1,20 +1,27 @@
-name: Terraform (Plan via TFC GitHub App)
+name: Terraform Plan (Terraform Cloud)
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
     paths:
       - 'infra/terraform/**'
       - '.github/workflows/terraform-plan.yml'
 
 permissions:
   contents: read
+  pull-requests: write
   id-token: write
+
+env:
+  TF_IN_AUTOMATION: 'true'
+  TF_WORKING_DIR: infra/terraform
+  TFC_ORG: ${{ vars.TFC_ORG || 'mikecbrant' }}
+  TFC_WORKSPACE: ${{ vars.TFC_WORKSPACE || 'vp-authorizer' }}
 
 jobs:
   plan:
+    if: ${{ secrets.TF_API_TOKEN != '' }}
     runs-on: ubuntu-latest
-    env:
-      TF_IN_AUTOMATION: 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,26 +29,83 @@ jobs:
       - name: Setup Terraform CLI
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: latest
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
       - name: Terraform fmt (check)
-        working-directory: infra/terraform
+        working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform fmt -check -diff
 
-      - name: Terraform validate (no-backend)
-        if: ${{ github.event_name != 'pull_request' }}
-        working-directory: infra/terraform
-        run: |
-          terraform init -backend=false -input=false
-          terraform validate -no-color
-      - name: Skip validate on PRs (provider unpublished)
-        if: ${{ github.event_name == 'pull_request' }}
-        run: |
-          echo "Skipping terraform validate on PRs until provider mikecbrant/vpauthorizer is published to the Registry."
+      - name: Terraform Init (remote backend)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
 
-      - name: Note
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate -no-color
+
+      - name: Terraform Plan (remote run in TFC)
+        id: tf-plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          cat << 'MSG' >> $GITHUB_STEP_SUMMARY
-          Terraform Cloud GitHub App is configured to run speculative plans on pull requests.
-          This workflow runs fmt/validate locally and relies on TFC to execute the plan in workspace "vp-authorizer" (org: "mikecbrant").
-          MSG
+          set -eo pipefail
+          terraform plan -no-color -input=false 2>&1 | tee /tmp/tf-plan.txt
+          summary=$(grep -E "^(No changes\.|Plan: |Your infrastructure matches the configuration\.)" -m1 /tmp/tf-plan.txt || true)
+          run_url=$(grep -Eo 'https://app\.terraform\.io/.*/runs/run-[a-zA-Z0-9]+' -m1 /tmp/tf-plan.txt || true)
+          echo "summary=${summary}" >> $GITHUB_OUTPUT
+          echo "run_url=${run_url}" >> $GITHUB_OUTPUT
+
+      - name: Comment plan on PR
+        if: ${{ always() && github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const marker = '<!-- tf-plan-comment -->';
+            const header = `Terraform plan for workspace ${process.env.TFC_ORG}/${process.env.TFC_WORKSPACE}`;
+            const summary = `${{ toJSON(steps["tf-plan"].outputs.summary) }}`.trim();
+            const runUrl = `${{ toJSON(steps["tf-plan"].outputs.run_url) }}`.trim();
+
+            let output = 'No plan output captured.';
+            try {
+              output = fs.readFileSync('/tmp/tf-plan.txt', 'utf8');
+            } catch (e) {}
+
+            let content = `### ${header}\n\n`;
+            if (summary) content += `Summary: ${summary}\n\n`;
+            if (runUrl) content += `Run: ${runUrl}\n\n`;
+            const trimmed = output.split('\n').slice(-200).join('\n');
+            content += '```\n' + trimmed + '\n```\n' + marker;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number });
+            const prev = comments.find((c) => c.body && c.body.includes(marker));
+
+            if (prev) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: prev.id, body: content });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: content });
+            }
+
+  no_token:
+    if: ${{ secrets.TF_API_TOKEN == '' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment plan skipped (no TF_API_TOKEN)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- tf-plan-comment -->';
+            const msg = `### Terraform plan\n\nPlan skipped: TF_API_TOKEN is not configured for PR runs.\n\n${marker}`;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number });
+            const prev = comments.find((c) => c.body && c.body.includes(marker));
+
+            if (prev) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: prev.id, body: msg });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body: msg });
+            }

@@ -2,9 +2,13 @@ package dynamo
 
 import "fmt"
 
-// Tenant keys
+// TenantPK returns the partition key for a tenant record.
 func TenantPK(tenantId string) string { return fmt.Sprintf("TENANT#%s", tenantId) }
+
+// TenantSK returns the sort key for a tenant record.
 func TenantSK(tenantId string) string { return fmt.Sprintf("TENANT#%s", tenantId) }
+
+// TenantNameGSI returns the (GSI1PK, GSI1SK) pair for a tenant name uniqueness guard.
 func TenantNameGSI(name string) (string, string) {
 	v := fmt.Sprintf("TENANT_NAME#%s", name)
 	return v, v

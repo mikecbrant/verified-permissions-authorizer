@@ -27,6 +27,7 @@ import (
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/verifiedpermissions"
 	vptypes "github.com/aws/aws-sdk-go-v2/service/verifiedpermissions/types"
+
 	sharedavp "github.com/mikecbrant/verified-permissions-authorizer/internal/common"
 	sharedassets "github.com/mikecbrant/verified-permissions-authorizer/internal/common/assets"
 )
@@ -34,6 +35,7 @@ import (
 var _ resource.Resource = (*authorizerResource)(nil)
 var _ resource.ResourceWithImportState = (*authorizerResource)(nil)
 
+// NewAuthorizerResource creates the main Terraform resource for this provider.
 func NewAuthorizerResource() resource.Resource { return &authorizerResource{} }
 
 type authorizerResource struct{}
@@ -59,7 +61,7 @@ type authorizerModel struct {
 	DynamoStreamArn          types.String `tfsdk:"dynamo_stream_arn"`
 	CognitoUserPoolId        types.String `tfsdk:"cognito_user_pool_id"`
 	CognitoUserPoolArn       types.String `tfsdk:"cognito_user_pool_arn"`
-	CognitoUserPoolClientIds types.List   `tfsdk:"cognito_user_pool_client_ids"`
+	CognitoUserPoolClientIDs types.List   `tfsdk:"cognito_user_pool_client_ids"`
 }
 
 func (r *authorizerResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -128,28 +130,13 @@ func (r *authorizerResource) Schema(_ context.Context, _ resource.SchemaRequest,
 
 func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan authorizerModel
-	diags := req.Plan.Get(ctx, &plan)
-	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	// Defaults
-	mem := int64(128)
-	rc := int64(1)
-	pc := int64(0)
-	if plan.Lambda != nil {
-		if !plan.Lambda.MemorySize.IsNull() {
-			mem = plan.Lambda.MemorySize.ValueInt64()
-		}
-		if !plan.Lambda.ReservedConcurrency.IsNull() {
-			rc = plan.Lambda.ReservedConcurrency.ValueInt64()
-		}
-		if !plan.Lambda.ProvisionedConcurrency.IsNull() {
-			pc = plan.Lambda.ProvisionedConcurrency.ValueInt64()
-		}
-	}
-	if pc > 0 && rc < pc {
-		resp.Diagnostics.AddError("Invalid lambda concurrency settings", fmt.Sprintf("provisioned_concurrency (%d) must be <= reserved_concurrency (%d)", pc, rc))
+	lambdaSettings, err := resolveLambdaSettings(plan.Lambda)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid lambda concurrency settings", err.Error())
 		return
 	}
 
@@ -160,24 +147,105 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
 	}
 	region := cfg.Region
 
-	// 1) Policy store
 	vp := verifiedpermissions.NewFromConfig(cfg)
-	psOut, err := vp.CreatePolicyStore(ctx, &verifiedpermissions.CreatePolicyStoreInput{ValidationSettings: &vptypes.ValidationSettings{Mode: vptypes.ValidationModeStrict}})
+	psId, psArn, err := createPolicyStore(ctx, vp)
 	if err != nil {
 		resp.Diagnostics.AddError("Create policy store failed", err.Error())
 		return
 	}
-	psId := awsStringValue(psOut.PolicyStoreId)
-	psArn := awsStringValue(psOut.Arn)
-	if strings.TrimSpace(psId) == "" || strings.TrimSpace(psArn) == "" {
-		resp.Diagnostics.AddError("Create policy store failed", "missing policy store identifiers from CreatePolicyStore response")
+
+	ddb := dynamodb.NewFromConfig(cfg)
+	_, tableArn, err := createAndDescribeDynamoTable(ctx, ddb)
+	if err != nil {
+		resp.Diagnostics.AddError("Create DynamoDB table failed", err.Error())
 		return
 	}
 
-	// 2) DynamoDB table
-	ddb := dynamodb.NewFromConfig(cfg)
-	tableName := fmt.Sprintf("%s-tenant-%d", "vpa", time.Now().Unix())
-	_, err = ddb.CreateTable(ctx, &dynamodb.CreateTableInput{
+	roleArn, err := createLambdaRole(ctx, iam.NewFromConfig(cfg))
+	if err != nil {
+		resp.Diagnostics.AddError("Create IAM role failed", err.Error())
+		return
+	}
+
+	fnArn, err := createLambdaFunction(ctx, lambda.NewFromConfig(cfg), roleArn, psId, lambdaSettings)
+	if err != nil {
+		resp.Diagnostics.AddError("Create Lambda failed", err.Error())
+		return
+	}
+
+	// 5) Optionally apply schema/policies and guardrails
+	if plan.VerifiedPermissions != nil {
+		warns, err := applyVerifiedPermissions(ctx, psId, region, plan.VerifiedPermissions)
+		if err != nil {
+			resp.Diagnostics.AddError("Verified permissions config failed", err.Error())
+			return
+		}
+		for _, w := range warns {
+			resp.Diagnostics.AddWarning("AVP", w)
+		}
+	}
+
+	// Outputs
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), types.StringValue(psId))...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("policy_store_id"), types.StringValue(psId))...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("policy_store_arn"), types.StringValue(psArn))...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("lambda_authorizer_arn"), types.StringValue(fnArn))...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("lambda_role_arn"), types.StringValue(roleArn))...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("dynamo_table_arn"), types.StringValue(tableArn))...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+}
+
+type lambdaSettings struct {
+	memorySize          int64
+	reservedConcurrency int64
+	provisioned         int64
+}
+
+func resolveLambdaSettings(plan *LambdaBlock) (lambdaSettings, error) {
+	mem := int64(128)
+	rc := int64(1)
+	pc := int64(0)
+	if plan != nil {
+		if !plan.MemorySize.IsNull() {
+			mem = plan.MemorySize.ValueInt64()
+		}
+		if !plan.ReservedConcurrency.IsNull() {
+			rc = plan.ReservedConcurrency.ValueInt64()
+		}
+		if !plan.ProvisionedConcurrency.IsNull() {
+			pc = plan.ProvisionedConcurrency.ValueInt64()
+		}
+	}
+	if pc > 0 && rc < pc {
+		return lambdaSettings{}, fmt.Errorf(
+			"provisioned_concurrency (%d) must be <= reserved_concurrency (%d)",
+			pc,
+			rc,
+		)
+	}
+	return lambdaSettings{memorySize: mem, reservedConcurrency: rc, provisioned: pc}, nil
+}
+
+func createPolicyStore(ctx context.Context, client *verifiedpermissions.Client) (policyStoreId string, policyStoreArn string, err error) {
+	out, err := client.CreatePolicyStore(ctx, &verifiedpermissions.CreatePolicyStoreInput{
+		ValidationSettings: &vptypes.ValidationSettings{Mode: vptypes.ValidationModeStrict},
+	})
+	if err != nil {
+		return "", "", err
+	}
+	psId := awsStringValue(out.PolicyStoreId)
+	psArn := awsStringValue(out.Arn)
+	if strings.TrimSpace(psId) == "" || strings.TrimSpace(psArn) == "" {
+		return "", "", fmt.Errorf("missing policy store identifiers from CreatePolicyStore response")
+	}
+	return psId, psArn, nil
+}
+
+func createAndDescribeDynamoTable(ctx context.Context, client *dynamodb.Client) (tableName string, tableArn string, err error) {
+	tableName = fmt.Sprintf("%s-tenant-%d", "vpa", time.Now().Unix())
+	_, err = client.CreateTable(ctx, &dynamodb.CreateTableInput{
 		TableName:   &tableName,
 		BillingMode: dynamodbtypes.BillingModePayPerRequest,
 		AttributeDefinitions: []dynamodbtypes.AttributeDefinition{
@@ -195,169 +263,151 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
 		},
 	})
 	if err != nil {
-		resp.Diagnostics.AddError("Create DynamoDB table failed", err.Error())
-		return
+		return "", "", err
 	}
+	desc, err := client.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: &tableName})
+	if err != nil {
+		return "", "", fmt.Errorf("describe table failed for %s: %w", tableName, err)
+	}
+	if desc.Table == nil || desc.Table.TableArn == nil {
+		return "", "", fmt.Errorf("describe table missing TableArn for %s", tableName)
+	}
+	return tableName, *desc.Table.TableArn, nil
+}
 
-	// 3) IAM role
-	iamc := iam.NewFromConfig(cfg)
+func createLambdaRole(ctx context.Context, client *iam.Client) (roleArn string, err error) {
 	assume := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":["lambda.amazonaws.com"]},"Action":["sts:AssumeRole"]}]}`
-	roleOut, err := iamc.CreateRole(ctx, &iam.CreateRoleInput{AssumeRolePolicyDocument: &assume, RoleName: awsString(fmt.Sprintf("vpa-role-%d", time.Now().Unix()))})
+	roleOut, err := client.CreateRole(ctx, &iam.CreateRoleInput{
+		AssumeRolePolicyDocument: &assume,
+		RoleName:                 awsString(fmt.Sprintf("vpa-role-%d", time.Now().Unix())),
+	})
 	if err != nil {
-		resp.Diagnostics.AddError("Create IAM role failed", err.Error())
-		return
+		return "", err
 	}
-	roleArn := *roleOut.Role.Arn
-
-	// Attach basic execution role
-	if _, err := iamc.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{RoleName: roleOut.Role.RoleName, PolicyArn: awsString("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")}); err != nil {
-		resp.Diagnostics.AddError("Attach IAM role policy failed", fmt.Sprintf("policy=%s role=%s err=%v", "AWSLambdaBasicExecutionRole", *roleOut.Role.RoleName, err))
-		return
+	if _, err := client.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
+		RoleName:  roleOut.Role.RoleName,
+		PolicyArn: awsString("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"),
+	}); err != nil {
+		return "", fmt.Errorf(
+			"attach role policy failed (policy=%s role=%s): %w",
+			"AWSLambdaBasicExecutionRole",
+			awsStringValue(roleOut.Role.RoleName),
+			err,
+		)
 	}
+	return awsStringValue(roleOut.Role.Arn), nil
+}
 
-	// 4) Lambda function from embedded JS
-	zbuf := new(bytes.Buffer)
-	zw := zip.NewWriter(zbuf)
-	f, err := zw.Create("index.mjs")
+func createLambdaFunction(ctx context.Context, client *lambda.Client, roleArn string, policyStoreId string, settings lambdaSettings) (functionArn string, err error) {
+	zbuf, err := buildLambdaZip()
 	if err != nil {
-		resp.Diagnostics.AddError("zip create failed", err.Error())
-		return
+		return "", err
 	}
-	if _, err := f.Write([]byte(sharedassets.GetAuthorizerIndexMjs())); err != nil {
-		resp.Diagnostics.AddError("zip write failed", err.Error())
-		return
-	}
-	if err := zw.Close(); err != nil {
-		resp.Diagnostics.AddError("zip close failed", err.Error())
-		return
-	}
-
-	lamb := lambda.NewFromConfig(cfg)
 	fnName := fmt.Sprintf("vpa-authorizer-%d", time.Now().Unix())
-	publish := pc > 0
-	fnOut, err := lamb.CreateFunction(ctx, &lambda.CreateFunctionInput{
+	publish := settings.provisioned > 0
+	out, err := client.CreateFunction(ctx, &lambda.CreateFunctionInput{
 		FunctionName:  &fnName,
 		Role:          &roleArn,
 		Runtime:       lambdatypes.RuntimeNodejs20x,
 		Handler:       awsString("index.handler"),
-		Code:          &lambdatypes.FunctionCode{ZipFile: zbuf.Bytes()},
+		Code:          &lambdatypes.FunctionCode{ZipFile: zbuf},
 		Architectures: []lambdatypes.Architecture{lambdatypes.ArchitectureArm64},
 		Timeout:       awsInt32(10),
-		MemorySize:    awsInt32(int32(mem)),
+		MemorySize:    awsInt32(int32(settings.memorySize)),
 		Publish:       publish,
-		Environment:   &lambdatypes.Environment{Variables: map[string]string{"POLICY_STORE_ID": psId}},
+		Environment:   &lambdatypes.Environment{Variables: map[string]string{"POLICY_STORE_ID": policyStoreId}},
 	})
 	if err != nil {
-		resp.Diagnostics.AddError("Create Lambda failed", err.Error())
-		return
+		return "", err
 	}
-
-	// 5) Optionally apply schema/policies and guardrails
-	if plan.VerifiedPermissions != nil {
-		vpPlan := plan.VerifiedPermissions
-		// Resolve inputs (with defaults)
-		schemaPath := strings.TrimSpace(strOrDefault(vpPlan.SchemaFile.ValueString(), "./authorizer/schema.yaml"))
-		policyDir := strings.TrimSpace(strOrDefault(vpPlan.PolicyDir.ValueString(), "./authorizer/policies"))
-		if !filepath.IsAbs(schemaPath) {
-			cwd, err := os.Getwd()
-			if err != nil {
-				resp.Diagnostics.AddError("cwd error", err.Error())
-				return
-			}
-			schemaPath = filepath.Join(cwd, schemaPath)
-		}
-		if !filepath.IsAbs(policyDir) {
-			cwd, err := os.Getwd()
-			if err != nil {
-				resp.Diagnostics.AddError("cwd error", err.Error())
-				return
-			}
-			policyDir = filepath.Join(cwd, policyDir)
-		}
-		if st, err := os.Stat(policyDir); err != nil || !st.IsDir() {
-			resp.Diagnostics.AddError("Invalid verified_permissions.policy_dir", fmt.Sprintf("%q not found or not a directory", policyDir))
-			return
-		}
-
-		cedarJSON, _, actions, warns, err := sharedavp.LoadAndValidateSchema(schemaPath)
-		if err != nil {
-			resp.Diagnostics.AddError("Schema error", err.Error())
-			return
-		}
-		for _, w := range warns {
-			resp.Diagnostics.AddWarning("AVP", w)
-		}
-		agMode := strings.ToLower(strings.TrimSpace(vpPlan.ActionGroupEnforcement.ValueString()))
-		if agMode == "" {
-			agMode = "error"
-		}
-		if violations, err := sharedavp.EnforceActionGroups(actions, agMode); err != nil {
-			resp.Diagnostics.AddError("Action group enforcement", err.Error())
-			return
-		} else if len(violations) > 0 && agMode == "warn" {
-			resp.Diagnostics.AddWarning("AVP", fmt.Sprintf("actions not aligned to canonical action groups: %s", strings.Join(violations, ", ")))
-		}
-		// Apply schema if changed
-		if err := sharedavp.PutSchemaIfChanged(ctx, psId, cedarJSON, region); err != nil {
-			resp.Diagnostics.AddError("Put schema failed", err.Error())
-			return
-		}
-		files, err := sharedavp.CollectPolicyFiles(policyDir)
-		if err != nil {
-			resp.Diagnostics.AddError("Policy discovery failed", err.Error())
-			return
-		}
-		// Policies are created through TF resources only in future iterations; here we just sanity check
-		_ = files
-	}
-
-	// Outputs
-	if di := resp.State.SetAttribute(ctx, path.Root("id"), types.StringValue(psId)); di.HasError() {
-		resp.Diagnostics.Append(di...)
-		return
-	}
-	if di := resp.State.SetAttribute(ctx, path.Root("policy_store_id"), types.StringValue(psId)); di.HasError() {
-		resp.Diagnostics.Append(di...)
-		return
-	}
-	if di := resp.State.SetAttribute(ctx, path.Root("policy_store_arn"), types.StringValue(psArn)); di.HasError() {
-		resp.Diagnostics.Append(di...)
-		return
-	}
-	if di := resp.State.SetAttribute(ctx, path.Root("lambda_authorizer_arn"), types.StringValue(*fnOut.FunctionArn)); di.HasError() {
-		resp.Diagnostics.Append(di...)
-		return
-	}
-	if di := resp.State.SetAttribute(ctx, path.Root("lambda_role_arn"), types.StringValue(roleArn)); di.HasError() {
-		resp.Diagnostics.Append(di...)
-		return
-	}
-	// Resolve and set DynamoDB table ARN from AWS to ensure correctness
-	ddesc, err := ddb.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: &tableName})
-	if err != nil {
-		resp.Diagnostics.AddError("Describe DynamoDB table failed", err.Error())
-		return
-	}
-	if di := resp.State.SetAttribute(ctx, path.Root("dynamo_table_arn"), types.StringValue(*ddesc.Table.TableArn)); di.HasError() {
-		resp.Diagnostics.Append(di...)
-		return
-	}
+	return awsStringValue(out.FunctionArn), nil
 }
 
-func (r *authorizerResource) Read(_ context.Context, _ resource.ReadRequest, _ *resource.ReadResponse) {}
-func (r *authorizerResource) Update(_ context.Context, _ resource.UpdateRequest, _ *resource.UpdateResponse) {}
-func (r *authorizerResource) Delete(_ context.Context, _ resource.DeleteRequest, _ *resource.DeleteResponse) {}
-func (r *authorizerResource) ImportState(_ context.Context, _ resource.ImportStateRequest, _ *resource.ImportStateResponse) {}
+func buildLambdaZip() ([]byte, error) {
+	zbuf := new(bytes.Buffer)
+	zw := zip.NewWriter(zbuf)
+	f, err := zw.Create("index.mjs")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := f.Write([]byte(sharedassets.GetAuthorizerIndexMjs())); err != nil {
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return zbuf.Bytes(), nil
+}
+
+func applyVerifiedPermissions(ctx context.Context, policyStoreId string, region string, cfg *VerifiedPermissionsBlock) ([]string, error) {
+	schemaPath, policyDir, err := resolveVerifiedPermissionsPaths(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	cedarJSON, _, actions, warns, err := sharedavp.LoadAndValidateSchema(schemaPath)
+	if err != nil {
+		return nil, fmt.Errorf("schema error: %w", err)
+	}
+	agMode := strings.ToLower(strings.TrimSpace(cfg.ActionGroupEnforcement.ValueString()))
+	if agMode == "" {
+		agMode = "error"
+	}
+	if violations, err := sharedavp.EnforceActionGroups(actions, agMode); err != nil {
+		return nil, fmt.Errorf("action group enforcement: %w", err)
+	} else if len(violations) > 0 && agMode == "warn" {
+		warns = append(warns, fmt.Sprintf("actions not aligned to canonical action groups: %s", strings.Join(violations, ", ")))
+	}
+	if err := sharedavp.PutSchemaIfChanged(ctx, policyStoreId, cedarJSON, region); err != nil {
+		return nil, fmt.Errorf("put schema failed: %w", err)
+	}
+	if _, err := sharedavp.CollectPolicyFiles(policyDir); err != nil {
+		return nil, fmt.Errorf("policy discovery failed: %w", err)
+	}
+	return warns, nil
+}
+
+func resolveVerifiedPermissionsPaths(cfg *VerifiedPermissionsBlock) (schemaPath string, policyDir string, err error) {
+	schemaPath = strings.TrimSpace(strOrDefault(cfg.SchemaFile.ValueString(), "./authorizer/schema.yaml"))
+	policyDir = strings.TrimSpace(strOrDefault(cfg.PolicyDir.ValueString(), "./authorizer/policies"))
+	if !filepath.IsAbs(schemaPath) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", "", err
+		}
+		schemaPath = filepath.Join(cwd, schemaPath)
+	}
+	if !filepath.IsAbs(policyDir) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", "", err
+		}
+		policyDir = filepath.Join(cwd, policyDir)
+	}
+	if st, err := os.Stat(policyDir); err != nil || !st.IsDir() {
+		return "", "", fmt.Errorf("verified_permissions.policy_dir %q not found or not a directory", policyDir)
+	}
+	return schemaPath, policyDir, nil
+}
+
+func (r *authorizerResource) Read(_ context.Context, _ resource.ReadRequest, _ *resource.ReadResponse) {
+}
+func (r *authorizerResource) Update(_ context.Context, _ resource.UpdateRequest, _ *resource.UpdateResponse) {
+}
+func (r *authorizerResource) Delete(_ context.Context, _ resource.DeleteRequest, _ *resource.DeleteResponse) {
+}
+func (r *authorizerResource) ImportState(_ context.Context, _ resource.ImportStateRequest, _ *resource.ImportStateResponse) {
+}
 
 func awsString(s string) *string { return &s }
 func awsInt32(v int32) *int32    { return &v }
 
 // awsStringValue safely dereferences an AWS SDK *string, returning an empty string when nil.
 func awsStringValue(p *string) string {
-    if p == nil {
-        return ""
-    }
-    return *p
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func strOrDefault(s string, def string) string {

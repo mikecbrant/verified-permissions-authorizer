@@ -17,6 +17,11 @@ type Logger interface {
 // NopLogger discards all logs.
 type NopLogger struct{}
 
+// Debug discards the log entry.
 func (NopLogger) Debug(string, Fields) {}
-func (NopLogger) Info(string, Fields)  {}
-func (NopLogger) Warn(string, Fields)  {}
+
+// Info discards the log entry.
+func (NopLogger) Info(string, Fields) {}
+
+// Warn discards the log entry.
+func (NopLogger) Warn(string, Fields) {}

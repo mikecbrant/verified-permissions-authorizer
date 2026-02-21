@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	provider "github.com/mikecbrant/verified-permissions-authorizer/internal/pulumi"
 	p "github.com/pulumi/pulumi-go-provider"
+
+	provider "github.com/mikecbrant/verified-permissions-authorizer/internal/pulumi"
 )
 
 func main() {

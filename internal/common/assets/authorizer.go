@@ -8,4 +8,5 @@ import _ "embed"
 //go:embed lambda/index.mjs
 var AuthorizerIndexMjs string
 
+// GetAuthorizerIndexMjs returns the embedded Lambda authorizer entrypoint.
 func GetAuthorizerIndexMjs() string { return AuthorizerIndexMjs }

@@ -1,4 +1,4 @@
-name: Terraform (Apply via TFC GitHub App)
+name: Terraform Apply (Terraform Cloud)
 
 on:
   push:
@@ -12,11 +12,16 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  TF_IN_AUTOMATION: 'true'
+  TF_WORKING_DIR: infra/terraform
+  TFC_ORG: ${{ vars.TFC_ORG || 'mikecbrant' }}
+  TFC_WORKSPACE: ${{ vars.TFC_WORKSPACE || 'vp-authorizer' }}
+
 jobs:
   apply:
+    if: ${{ secrets.TF_API_TOKEN != '' }}
     runs-on: ubuntu-latest
-    env:
-      TF_IN_AUTOMATION: 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,15 +29,26 @@ jobs:
       - name: Setup Terraform CLI
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: latest
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
       - name: Terraform fmt (check)
-        working-directory: infra/terraform
+        working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform fmt -check -diff
 
+      - name: Terraform Init (remote backend)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Apply (remote run in TFC)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve -input=false -no-color
+
+  no_token:
+    if: ${{ secrets.TF_API_TOKEN == '' }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Note
         run: |
           cat << 'MSG' >> $GITHUB_STEP_SUMMARY
-          Applies are performed by Terraform Cloud via the GitHub App VCS integration when commits land on main.
-          No TF_API_TOKEN or AWS credentials are used in GitHub Actions; the TFC workspace variables handle AWS access.
+          Terraform apply skipped: TF_API_TOKEN is not configured.
           MSG

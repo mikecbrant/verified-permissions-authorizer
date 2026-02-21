@@ -344,20 +344,24 @@ func (r *authorizerResource) Create(ctx context.Context, req resource.CreateRequ
 	}
 }
 
-func (r *authorizerResource) Read(_ context.Context, _ resource.ReadRequest, _ *resource.ReadResponse) {}
-func (r *authorizerResource) Update(_ context.Context, _ resource.UpdateRequest, _ *resource.UpdateResponse) {}
-func (r *authorizerResource) Delete(_ context.Context, _ resource.DeleteRequest, _ *resource.DeleteResponse) {}
-func (r *authorizerResource) ImportState(_ context.Context, _ resource.ImportStateRequest, _ *resource.ImportStateResponse) {}
+func (r *authorizerResource) Read(_ context.Context, _ resource.ReadRequest, _ *resource.ReadResponse) {
+}
+func (r *authorizerResource) Update(_ context.Context, _ resource.UpdateRequest, _ *resource.UpdateResponse) {
+}
+func (r *authorizerResource) Delete(_ context.Context, _ resource.DeleteRequest, _ *resource.DeleteResponse) {
+}
+func (r *authorizerResource) ImportState(_ context.Context, _ resource.ImportStateRequest, _ *resource.ImportStateResponse) {
+}
 
 func awsString(s string) *string { return &s }
 func awsInt32(v int32) *int32    { return &v }
 
 // awsStringValue safely dereferences an AWS SDK *string, returning an empty string when nil.
 func awsStringValue(p *string) string {
-    if p == nil {
-        return ""
-    }
-    return *p
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func strOrDefault(s string, def string) string {

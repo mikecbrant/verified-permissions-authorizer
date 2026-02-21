@@ -9,7 +9,7 @@ import (
 	"github.com/mikecbrant/verified-permissions-authorizer/internal/awssdk"
 )
 
-var sesIdentityArnRe = regexp.MustCompile(`^arn:(aws|aws-us-gov|aws-cn):ses:([a-z0-9-]+):([0-9]{12}):identity\\/(.+)$`)
+var sesIdentityArnRe = regexp.MustCompile(`^arn:(aws|aws-us-gov|aws-cn):ses:([a-z0-9-]+):([0-9]{12}):identity/(.+)$`)
 
 // ValidateSesConfig validates SES email identity configuration for Cognito User Pools developer email sending.
 // Returns (accountId, identityName, identityRegion) on success.

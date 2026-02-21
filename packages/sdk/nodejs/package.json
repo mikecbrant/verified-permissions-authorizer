@@ -57,7 +57,9 @@
     "coverage": {
       "provider": "v8",
       "all": false,
-      "include": ["src/**"],
+      "include": [
+        "src/**"
+      ],
       "thresholds": {
         "lines": 100,
         "functions": 100,

@@ -21,12 +21,25 @@
       "getTenantGrant": {
         "memberOf": ["Get"],
         "appliesTo": { "resourceTypes": ["TenantGrant"] },
-        "entityMap": { "TenantGrant": "MISSING_TEMPLATE_NAME" },
-        "input": { "rest": { "url": "/tenant-grant/:tenantId/:userId" } }
+        "entityMap": { "TenantGrant": "byTenantIdAndUserId" },
+        "input": {
+          "appsync": {
+            "body": {
+              "tenantId": "tenantId",
+              "userId": "userId"
+            }
+          },
+          "rest": {
+            "url": "/tenant-grant/:tenantId/:userId"
+          }
+        }
       }
     },
     "mappings": {
-      "actions": { "apiGateway": { "path": "requestContext.httpMethod" } }
+      "actions": {
+        "appsync": { "path": "info.fieldName" },
+        "apiGateway": { "path": "requestContext.httpMethod" }
+      }
     }
   }
 }

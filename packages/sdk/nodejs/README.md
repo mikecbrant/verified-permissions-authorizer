@@ -4,7 +4,7 @@ This package provides the Node.js SDK bindings for the `verified-permissions-aut
 
 ## CLI: avp-validate
 
-Validate your Cedar JSON schema (YAML/JSON), enforce canonical action groups (PascalCase + Global* variants), run a best‑effort policy syntax scan, and check canary structure – all without AWS calls.
+Validate your Cedar JSON schema (YAML/JSON), enforce canonical action groups (PascalCase + Global\* variants), run a best‑effort policy syntax scan, and check canary structure – all without AWS calls.
 
 Usage:
 
@@ -26,15 +26,15 @@ The provider performs equivalent validations during `pulumi up` and, when a cana
 See `src/types.ts` for the full type surface. Example:
 
 ```ts
-import { AuthorizerWithPolicyStore } from 'pulumi-verified-permissions-authorizer'
+import { AuthorizerWithPolicyStore } from "pulumi-verified-permissions-authorizer";
 
-new AuthorizerWithPolicyStore('authz', {
+new AuthorizerWithPolicyStore("authz", {
   verifiedPermissions: {
-    schemaFile: './avp/schema.yaml',
-    policyDir: './avp/policies',
-    actionGroupEnforcement: 'error',
+    schemaFile: "./avp/schema.yaml",
+    policyDir: "./avp/policies",
+    actionGroupEnforcement: "error",
   },
-})
+});
 ```
 
 ---

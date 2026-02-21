@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
-* AVP assets validator (SDK CLI)
-*
-* Validates a Cedar JSON schema (YAML/JSON), checks action-group conventions
-* (PascalCase + Global* variants), scans policies for basic syntax, and
-* validates canary config structure. No AWS calls are made.
-*
-* Usage:
-*   avp-validate \
-*     --schema ./path/to/schema.(yaml|yml|json) \
-*     --policyDir ./path/to/policies \
-*     [--canary ./path/to/canaries.yaml] \
-*     [--mode off|warn|error]            # default: error
-*/
+ * AVP assets validator (SDK CLI)
+ *
+ * Validates a Cedar JSON schema (YAML/JSON), checks action-group conventions
+ * (PascalCase + Global* variants), scans policies for basic syntax, and
+ * validates canary config structure. No AWS calls are made.
+ *
+ * Usage:
+ *   avp-validate \
+ *     --schema ./path/to/schema.(yaml|yml|json) \
+ *     --policyDir ./path/to/policies \
+ *     [--canary ./path/to/canaries.yaml] \
+ *     [--mode off|warn|error]            # default: error
+ */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import process from "node:process";
@@ -25,7 +25,8 @@ declare const require: any;
 
 // ---- helper functions (hoisted) ----
 
-const abs = (p: string): string => (isAbsolute(p) ? p : resolve(process.cwd(), p));
+const abs = (p: string): string =>
+  isAbsolute(p) ? p : resolve(process.cwd(), p);
 
 const fail = (msg: string): never => {
   console.error(`[avp-validate] ${msg}`);
@@ -45,7 +46,9 @@ const ok = (msg: string): never => {
   process.exit(0);
 };
 
-const loadSchema = (path: string): {
+const loadSchema = (
+  path: string,
+): {
   namespace: string;
   body: unknown;
   cedarJSON: string;
@@ -104,7 +107,9 @@ const enforceActionGroups = (actions: string[], mode: Mode): string[] => {
       ).join(", ")}: ${bad.join(", ")}`,
     );
   if (bad.length)
-    warn(`Actions not aligned to canonical groups (case-sensitive): ${bad.join(", ")}`);
+    warn(
+      `Actions not aligned to canonical groups (case-sensitive): ${bad.join(", ")}`,
+    );
   return bad;
 };
 
@@ -147,12 +152,14 @@ const validatePolicies = (files: string[]): string[] => {
 const validateCanaries = (path: string): void => {
   const doc = yaml.parse(readFileSync(path, "utf8"));
   const cases: any[] = doc?.cases ?? [];
-  if (!Array.isArray(cases)) fail(`Invalid canary file (cases must be an array): ${path}`);
+  if (!Array.isArray(cases))
+    fail(`Invalid canary file (cases must be an array): ${path}`);
   // Structural checks only; execution happens in the provider
   const requiredKeys = ["principal", "action", "resource", "expect"];
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i];
-    for (const k of requiredKeys) if (!(k in c)) fail(`canary #${i + 1} missing ${k}`);
+    for (const k of requiredKeys)
+      if (!(k in c)) fail(`canary #${i + 1} missing ${k}`);
   }
 };
 

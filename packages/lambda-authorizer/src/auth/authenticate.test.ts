@@ -4,6 +4,8 @@ import { authenticate } from './authenticate.js'
 
 describe('authenticate()', () => {
   it('throws on invalid token', () => {
-    expect(() => authenticate('not-a-jwt', 's')).toThrow('Invalid or expired JWT')
+    expect(() => authenticate('not-a-jwt', 's')).toThrow(
+      'Invalid or expired JWT',
+    )
   })
 })

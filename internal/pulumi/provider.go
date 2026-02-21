@@ -300,7 +300,7 @@ func createCognito(ctx *pulumi.Context, name string, cfg CognitoConfig, opts []p
 	if err != nil {
 		return nil, err
 	}
-	if err := createSesIdentityPolicy(ctx, name, up, account, identityRegion, identity, opts); err != nil {
+	if err := createSesIdentityPolicy(ctx, name, up, account, reg.Name, identityRegion, identity, opts); err != nil {
 		return nil, err
 	}
 	return &CognitoOutputs{UserPoolArn: up.Arn.ToStringPtrOutput(), UserPoolId: up.ID().ToStringPtrOutput(), UserPoolClientIDs: pulumi.ToStringArrayOutput([]pulumi.StringOutput{})}, nil
@@ -314,8 +314,16 @@ func createBareUserPool(ctx *pulumi.Context, name string, opts []pulumi.Resource
 	return &CognitoOutputs{UserPoolArn: up.Arn.ToStringPtrOutput(), UserPoolId: up.ID().ToStringPtrOutput(), UserPoolClientIDs: pulumi.ToStringArrayOutput([]pulumi.StringOutput{})}, nil
 }
 
-func createSesIdentityPolicy(ctx *pulumi.Context, name string, up *awscognito.UserPool, account string, identityRegion string, identityName string, opts []pulumi.ResourceOption) error {
-	policy := up.Arn.ApplyT(func(userPoolArn string) string {
+func createSesIdentityPolicy(ctx *pulumi.Context, name string, up *awscognito.UserPool, account string, userPoolRegion string, identityRegion string, identityName string, opts []pulumi.ResourceOption) error {
+	userPoolArn := pulumi.Sprintf(
+		"arn:%s:cognito-idp:%s:%s:userpool/%s",
+		partitionForRegion(userPoolRegion),
+		userPoolRegion,
+		account,
+		up.ID(),
+	)
+
+	policy := userPoolArn.ApplyT(func(userPoolArn string) string {
 		pol := map[string]any{
 			"Version": "2012-10-17",
 			"Statement": []map[string]any{{

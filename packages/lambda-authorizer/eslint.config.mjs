@@ -1,8 +1,8 @@
-import tsParser from '@typescript-eslint/parser';
-import tsEslintPlugin from '@typescript-eslint/eslint-plugin';
-import importPlugin from 'eslint-plugin-import';
-import simpleImportSort from 'eslint-plugin-simple-import-sort';
-import promisePlugin from 'eslint-plugin-promise';
+import tsParser from '@typescript-eslint/parser'
+import tsEslintPlugin from '@typescript-eslint/eslint-plugin'
+import importPlugin from 'eslint-plugin-import'
+import simpleImportSort from 'eslint-plugin-simple-import-sort'
+import promisePlugin from 'eslint-plugin-promise'
 
 // Optionally include shared config when available. We spread `shared` first so local
 // rules/configs below take precedence when overlaps occur.
@@ -19,7 +19,7 @@ const config = [
     ignores: ['dist/**'],
   },
   {
-    files: ['**/*.ts'] ,
+    files: ['**/*.ts'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
@@ -49,7 +49,10 @@ const config = [
       // Disabled here because typed linting would require a generated tsconfig.
       '@typescript-eslint/no-floating-promises': 'off',
       '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
-      '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
+      '@typescript-eslint/consistent-type-imports': [
+        'error',
+        { prefer: 'type-imports' },
+      ],
 
       // Prefer attaching catch handlers over try/catch in async flows
       'promise/prefer-await-to-then': 'off',
@@ -61,6 +64,6 @@ const config = [
       parserOptions: { project: null },
     },
   },
-];
+]
 
-export default config;
+export default config

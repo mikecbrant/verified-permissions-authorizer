@@ -7,7 +7,10 @@ import type {
 } from 'aws-lambda'
 
 import { type AuthorizerEvent, processAuthorization } from './auth/process.js'
-import { isApiGatewayAuthorizerEvent, isAppSyncAuthorizerEvent } from './utils/events.js'
+import {
+  isApiGatewayAuthorizerEvent,
+  isAppSyncAuthorizerEvent,
+} from './utils/events.js'
 
 type EmptyCtx = Record<string, never>
 
@@ -47,7 +50,10 @@ const denyFor = (event: AuthorizerEvent): AuthorizerResult => {
 }
 
 const handler = async (event: AuthorizerEvent): Promise<AuthorizerResult> => {
-  const { POLICY_STORE_ID: storeId } = process.env as Record<string, string | undefined>
+  const { POLICY_STORE_ID: storeId } = process.env as Record<
+    string,
+    string | undefined
+  >
   if (!storeId) return denyFor(event)
 
   return processAuthorization(storeId, event)
@@ -55,7 +61,11 @@ const handler = async (event: AuthorizerEvent): Promise<AuthorizerResult> => {
       if (isApiGatewayAuthorizerEvent(event)) {
         // We do not have principalId here; API GW requires a principal. Use anonymous when denied.
         const principal = ok ? 'subject' : 'anonymous'
-        return apiGatewayPolicy(ok ? 'Allow' : 'Deny', event.methodArn, principal)
+        return apiGatewayPolicy(
+          ok ? 'Allow' : 'Deny',
+          event.methodArn,
+          principal,
+        )
       }
       if (isAppSyncAuthorizerEvent(event)) return appSyncAuthResult(ok)
       return appSyncAuthResult(false)

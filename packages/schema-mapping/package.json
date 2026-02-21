@@ -1,41 +1,25 @@
 {
-  "name": "pulumi-verified-permissions-authorizer",
+  "name": "schema-mapping",
   "version": "0.0.1",
-  "description": "Pulumi Node.js SDK for the verified-permissions-authorizer component provider (Go).",
+  "private": true,
+  "description": "Cedar schema superset merger and request mapping utilities",
   "license": "MIT",
-  "private": false,
   "type": "module",
-  "main": "dist/index.mjs",
+  "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
-  "bin": {
-    "avp-validate": "dist/bin/avp-validate.mjs"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.mjs"
-    }
-  },
-  "engines": {
-    "node": ">=20"
-  },
   "scripts": {
-    "build": "tsgo --module ES2022 --target ES2022 --moduleResolution Bundler --outDir dist --rootDir src --declaration true src/index.ts src/bin/avp-validate.ts src/types.ts && mv dist/index.js dist/index.mjs && mv dist/bin/avp-validate.js dist/bin/avp-validate.mjs",
+    "build": "tsc --outDir dist --rootDir src --declaration true --module ES2022 --target ES2023 --moduleResolution Bundler src/index.ts",
     "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit --module ES2022 --target ES2022 --moduleResolution Bundler --lib ES2022,DOM src/index.ts src/types.ts",
-    "lint": "eslint src --max-warnings 0",
+    "typecheck": "tsc --noEmit --module ES2022 --target ES2023 --moduleResolution Bundler --lib ES2023,DOM src/merge.ts src/mapping.ts",
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "format": "prettier --check .",
     "format:write": "prettier --write ."
   },
   "dependencies": {
-    "@pulumi/pulumi": "^3.0.0",
-    "verified-permissions-lambda-authorizer": "workspace:*",
-    "yaml": "^2.5.1"
+    "yaml": "^2.5.1",
+    "@types/aws-lambda": "^8.10.146"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

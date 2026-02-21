@@ -1,4 +1,4 @@
-# ADR 0003: Provider `awssdk` library (dynamo, verified-permissions)
+# ADR 0003: Provider `aws-sdk` library (dynamo, verified-permissions)
 
 Status: Approved
 
@@ -27,11 +27,8 @@ The provider needs reusable, well-tested helpers that wrap low-level AWS SDK cal
 - Helpers are region-agnostic; the caller constructs the AWS config once and supplies a client.
 
 ## Logging
-- Logging uses a message + structured context pattern across Go code.
-  - Interface: `logging.Logger` with methods `Debug(msg string, ctx logging.Fields)`, `Info(...)`, `Warn(...)`.
-  - Context is a key/value map (`logging.Fields`) that is JSON‑friendly and can be composed through call stacks.
-  - Prefer short, lowerCamelCase keys; do not log secrets or full item bodies. Include only minimal identifiers needed for troubleshooting.
-  - Implementations should emit pretty human‑readable output in terminals and structured JSON for aggregators.
+- The logger interface is intentionally tiny: `Debugf`, `Infof`, `Warnf`.
+- Logging is contextual: messages include operation names and key identifiers but never log full item bodies or secrets.
 
 ## Consequences
 - Provider code becomes simpler and safer to evolve.

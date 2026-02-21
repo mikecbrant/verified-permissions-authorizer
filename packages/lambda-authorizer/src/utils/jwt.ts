@@ -4,7 +4,10 @@ import type {
 } from 'aws-lambda'
 import jwt from 'jsonwebtoken'
 
-import { isApiGatewayAuthorizerEvent, isAppSyncAuthorizerEvent } from './events.js'
+import {
+  isApiGatewayAuthorizerEvent,
+  isAppSyncAuthorizerEvent,
+} from './events.js'
 
 type JwtPayload = Record<string, unknown> & {
   exp?: number

@@ -389,7 +389,6 @@ func resolveVerifiedPermissionsPaths(cfg *VerifiedPermissionsBlock) (schemaPath 
 	}
 	return schemaPath, policyDir, nil
 }
-
 func (r *authorizerResource) Read(_ context.Context, _ resource.ReadRequest, _ *resource.ReadResponse) {
 }
 func (r *authorizerResource) Update(_ context.Context, _ resource.UpdateRequest, _ *resource.UpdateResponse) {

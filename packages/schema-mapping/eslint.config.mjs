@@ -3,10 +3,7 @@ import tsEslintPlugin from "@typescript-eslint/eslint-plugin";
 import importPlugin from "eslint-plugin-import";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 import promisePlugin from "eslint-plugin-promise";
-// no extra imports
 
-// Optionally include shared config when available. We spread `shared` first so local
-// rules/configs below take precedence when overlaps occur.
 let shared = [];
 try {
   const m = await import("@mikecbrant/typescript-tooling/eslint/flat");
